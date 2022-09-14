@@ -1,0 +1,4 @@
+1. Read the man pages for ping, ssh, scp, wget, and nmap. Study the different options associated with each command.
+2. Familiarize yourself with the wireshark tool.
+3. Familiarize yourself with HTTP/1.0 and HTTTP/1.1. Their differences and detection methodologies.
+4. Learn how to use FPT and SSH via command line.
