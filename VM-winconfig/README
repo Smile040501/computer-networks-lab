@@ -1,0 +1,5 @@
+Steps before running:
+
+1. Add "C:\Program Files\Oracle\VirtualBox" (or the vbox installation location) to the windows "PATH" environment variable
+2. Set environment variable "VBOX_USER_HOME" to point to a directory where you want virtual box to store its config files
+3. Install `putty`
