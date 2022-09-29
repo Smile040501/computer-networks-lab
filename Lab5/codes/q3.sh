@@ -64,4 +64,4 @@ while [[ $(echo "${high} >= ${low}" | bc -l) -eq 1 ]]; do
 done
 
 # Print the largest value of x found
-echo ${prev_mid}
+echo "The largest value of x is: ${prev_mid}"
