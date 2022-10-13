@@ -159,9 +159,9 @@ int main(int argc, char const *argv[]) {
 
     // Calculating the virtual finish time of all the packets in the queues
     for (auto &q : queues) {
-        // The previous transmission time of the last packet in the queue,
-        // also serve as the transmission time for the current packet after update
-        ld transTime = 0;
+        // The previous finish time of the last packet in the queue,
+        // also serve as the finish time for the current packet after update
+        ld finishTime = 0;
 
         // While the queue is not empty
         while (!q.empty()) {
@@ -169,21 +169,27 @@ int main(int argc, char const *argv[]) {
             Packet p = q.front();
             // Remove the packet from the queue
             q.pop();
-            // Calculate the transmission time for the current packet
-            // Tᵢ = max(Aᵢ, Tᵢ₋₁) + (Lᵢ / (W * Rate))
-            // We will serve the packet as per the service rate multiplied by the weight of the queue
-            transTime = max(p.arrTime, transTime) + (p.packLen / (q.weight * serviceRate));
-            // Push the pair (transTime, Packet) into the priority queue
-            pq.emplace(make_pair(transTime, p));
+            // Calculate the finish time for the current packet
+            // Fᵢ = max(Aᵢ, Fᵢ₋₁) + (Lᵢ / W)
+            // We will serve the packet as per the weight of the queue
+            finishTime = max(p.arrTime, finishTime) + (p.packLen / q.weight);
+            // Push the pair (finishTime, Packet) into the priority queue
+            pq.emplace(make_pair(finishTime, p));
         }
     }
+
+    // The previous transmission time of the last packet in the queue,
+    // also serve as the transmission time for the current packet after update
+    ld transTime = 0;
 
     // Take the packets in decreasing order of their transmission times and print the results
     while (!pq.empty()) {
         auto p = pq.top();
         pq.pop();
+        // Update the transmission time
+        transTime = max(p.second.arrTime, transTime) + (p.second.packLen / serviceRate);
         // Printing the results in the desired format
-        std::cout << std::fixed << std::setprecision(2) << p.first << " " << p.second.packId << " " << p.second.queueId << "\n";
+        std::cout << std::fixed << std::setprecision(2) << transTime << " " << p.second.packId << " " << p.second.queueId << "\n";
     }
 
     return EXIT_SUCCESS;
