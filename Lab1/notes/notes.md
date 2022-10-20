@@ -185,6 +185,25 @@ sudo tcpdump -D
 # Checks all the available interfaces for tcpdump
 ```
 
+-   **Filters**
+    -   Host Filters
+    -   Network Filters
+    -   Protocol and Port Filters
+    -   TCP/UDP Port Filters
+
+```sh
+# Filter for a specific host
+sudo tcpdump host <IP>
+
+# Capture traffic initiated by a source
+sudo tcpdump src host <IP>
+
+# Capture traffic initiated for a destination
+sudo tcpdump dst host <IP>
+
+
+```
+
 ![](pics/6.png)
 
 ## netstat
