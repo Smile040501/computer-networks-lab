@@ -81,9 +81,9 @@ What's a connection?
 
 -   There are **stream** sockets and the **datagram** sockets that determine the structure of the transport layer
 
-![](pics/1.png)
+![](pics/15.png)
 
-![](pics/2.png)
+![](pics/16.png)
 
 -   **Stream Sockets**:
     -   Stream sockets provide **reliable two-way** communication similar to when we call someone on the phone
@@ -681,14 +681,14 @@ if (s == -1) { // some error has occurred
 -   `Server Socket`
     -   **Create a Socket**: Get the file descriptor
     -   **Bind to an address**: What port am I on?
-    -   **Listen on a port**: Wait for a connection to be established
-    -   **Accept**: Connection request from client
+    -   **Listen on a port (only TCP)**: Wait for a connection to be established
+    -   **Accept (only TCP)**: Connection request from client
     -   **Send/Receive**: Send/Receive some data over a connection in the same way we read/write for a file
     -   **Shutdown**: To end read/write
     -   **Close**: Release the connection and the data
 -   `Client Socket`
     -   **Create a Socket**: Get the file descriptor
-    -   **Connect**: Establish a connection to the server
+    -   **Connect (only TCP)**: Establish a connection to the server
     -   **Send/Receive**: Repeat until we have or receive data
     -   **Shutdown**: To end read/write
     -   **Close**: Release the connection and the data
@@ -721,8 +721,8 @@ if (s == -1) { // some error has occurred
 -   Connect the socket to the address of the server using the `connect()` system call
 -   Send and receive data. There are a number of ways to do this, but the simplest is to use the `read()` and `write()` system calls
 
-![](pics/3.png)
+![](pics/17.png)
 
-![](pics/4.png)
+![](pics/18.png)
 
-![](pics/5.png)
+![](pics/19.png)
