@@ -21,6 +21,15 @@
     - [lftp](#lftp)
     - [wget](#wget)
     - [nmap](#nmap)
+    - [netcat/nc/ncat](#netcatncncat)
+      - [Client/Server Connection](#clientserver-connection)
+      - [Ping Specific Port on Website](#ping-specific-port-on-website)
+      - [Scanning Ports](#scanning-ports)
+      - [Transfer Files](#transfer-files)
+      - [Transfer Directories](#transfer-directories)
+      - [Create Web Server](#create-web-server)
+      - [Simple Chat Server](#simple-chat-server)
+      - [Send HTTP Request](#send-http-request)
 - [Evolution of HTTP](#evolution-of-http)
   - [HTTP/0.9](#http09)
   - [HTTP/1.0](#http10)
@@ -567,6 +576,151 @@ sudo nmap -R <domain>
 # Scripts
 sudo nmap -Pn --script vuln <ip_addr>
 sudo nmap -sV --script http-malware-host <ip_addr>
+```
+
+### netcat/nc/ncat
+
+-   One of the powerful **networking tool, security tool or network monitoring tool**
+-   Used for:
+    -   Operation related to TCP, UDP or UNIX-domain sockets
+    -   Port Scanning
+    -   Port listening
+    -   Port redirection
+    -   Open Remote connections
+    -   **Read/Write data across network**
+    -   Network debugging
+    -   Network daemon testing
+    -   Simple TCP proxies
+    -   A Socks or HTTP Proxy Command for ssh
+
+```sh
+nc <options <host> <port>
+```
+
+-   Has two working modes:
+    -   **Connect Mode**: Netcat works as a client and requires the `<host>` and the `<port>` parameters
+    -   **Listen Mode**: Netcat works as a server. If `<host>` is omitted, it listens on all available addresses for the specified port
+-   Without any options, it tries to start a TCP connection at the provided host and port without any options
+
+| Option                 | Type         | Description                                                                                   |
+| ---------------------- | ------------ | --------------------------------------------------------------------------------------------- |
+| `-4`                   | Protocol     | Use IPv4 only                                                                                 |
+| `-6`                   | Protocol     | Use IPv6 only                                                                                 |
+| `-U`                   | Protocol     | Use Unix domain sockets                                                                       |
+| `-u`                   | Protocol     | Use UDP connection                                                                            |
+| `-g <hop1, hop2, ...>` | Connect Mode | Set hops for loose source routing in IPv4                                                     |
+| `-p port`              | Connect Mode | Binds the netcat source port to <port>                                                        |
+| `-s host`              | Connect Mode | Binds the netcat source host to <host>                                                        |
+| `-l`                   | Listen Mode  | Listen for connections instead of using connect mode                                          |
+| `-k`                   | Listen Mode  | Keeps the connection open for multiple simultaneous connections                               |
+| `-v`                   | Output       | Verbose                                                                                       |
+| `-n`                   | Output       | Don't do any DNS lookups                                                                      |
+| `-z`                   | Output       | Report connection status without establishing a connection. Cannot be used together with `-l` |
+
+#### Client/Server Connection
+
+```sh
+# Server
+nc -lv 1234
+```
+
+```sh
+# Client
+nc -v localhost 1234
+```
+
+-   Send a message from either device, and the same message shows up on the other device. **The client and server behave the same after the connection establishes**
+-   If from the client we press, **Ctrl + C**, the server will also be stopped
+
+```sh
+# Server
+nc -lkv 1234
+```
+
+-   `-k` to ensure the connection stays open after a disconnects
+
+#### Ping Specific Port on Website
+
+```sh
+nc -zv google.com 443
+```
+
+#### Scanning Ports
+
+```sh
+# Server
+nc -lkv 1234
+```
+
+```sh
+# Scan a port range from another device
+nc -zv localhost 1230-1240
+```
+
+#### Transfer Files
+
+-   Data transfer possible both ways
+
+```sh
+# Listen and send file on connection
+nc -lv 1234 < file.txt
+
+# Listen and receive file on connection
+nc -lv 1234 > file.txt
+```
+
+```sh
+# Receive a file on connection
+nc -zv localhost 1234 > file.txt
+
+# Send a file on connection
+nc -zv localhost 1234 < file.txt
+```
+
+#### Transfer Directories
+
+-   Need to pipe it with `tar`
+
+```sh
+# Receive directory
+nc -lv 1234 | tar xvf -
+```
+
+```sh
+# Send directory
+tar -cf - . | nc -v localhost 1234
+```
+
+#### Create Web Server
+
+```sh
+# Server
+nc -lv localhost 1234
+```
+
+```sh
+# Run the address on browser or use curl
+curl localhost:1234
+```
+
+#### Simple Chat Server
+
+```sh
+# User 1
+mawk -W interactive '$0="Bob: "$0' | nc -lv 1234
+```
+
+```sh
+# User 2
+mawk -W interactive '$0="Alice: "$0' | nc -v localhost 1234
+```
+
+-   Then, both can chat after successful connection
+
+#### Send HTTP Request
+
+```sh
+printf "GET / HTTP/1.0\r\n\r\n" | nc -v google.com 80
 ```
 
 # Evolution of HTTP
