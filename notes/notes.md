@@ -21,6 +21,7 @@
     - [lftp](#lftp)
     - [wget](#wget)
     - [nmap](#nmap)
+    - [telnet](#telnet)
     - [netcat/nc/ncat](#netcatncncat)
       - [Client/Server Connection](#clientserver-connection)
       - [Ping Specific Port on Website](#ping-specific-port-on-website)
@@ -578,6 +579,16 @@ sudo nmap -Pn --script vuln <ip_addr>
 sudo nmap -sV --script http-malware-host <ip_addr>
 ```
 
+### telnet
+
+-   **Teletype Network**
+-   Telnet is an old network protocol that is used to connect to remote systems over a TCP/IP network
+-   It connects to servers and network equipment
+
+```sh
+telnet <host> <port>
+```
+
 ### netcat/nc/ncat
 
 -   One of the powerful **networking tool, security tool or network monitoring tool**
@@ -594,7 +605,7 @@ sudo nmap -sV --script http-malware-host <ip_addr>
     -   A Socks or HTTP Proxy Command for ssh
 
 ```sh
-nc <options <host> <port>
+nc <options> <host> <port>
 ```
 
 -   Has two working modes:

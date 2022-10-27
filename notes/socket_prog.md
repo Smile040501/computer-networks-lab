@@ -33,6 +33,12 @@
     - [Procedure](#procedure)
     - [Steps on the `server` side](#steps-on-the-server-side)
     - [Steps on the `client` side](#steps-on-the-client-side)
+- [Advanced Techniques](#advanced-techniques)
+  - [Blocking](#blocking)
+  - [`poll()`: Synchronous I/O Multiplexing](#poll-synchronous-io-multiplexing)
+  - [`select()`: Synchronous I/O Multiplexing, Old School](#select-synchronous-io-multiplexing-old-school)
+  - [Handling partial `send()`s](#handling-partial-sends)
+  - [Broadcasting Packets](#broadcasting-packets)
 
 # Socket Programming
 
@@ -278,7 +284,6 @@ int getaddrinfo(const char *node,     // e.g. "www.example.com" or IP
 
 -   Does DNS and service name lookups
 -   Gives pointer to a **linked-list**, `res`, of results
--   [Example](showip.cpp)
 
 ```cpp
 // Example
@@ -302,6 +307,8 @@ if ((status = getaddrinfo("www.example.net", "3490", &hints, &servinfo)) != 0) {
 
 freeaddrinfo(servinfo); // free the linked-list
 ```
+
+-   **Example:** [showip.cpp](socket_programming/showip.cpp)
 
 #### `getnameinfo()`: Ready for Launch?
 
@@ -693,6 +700,12 @@ if (s == -1) { // some error has occurred
     -   **Shutdown**: To end read/write
     -   **Close**: Release the connection and the data
 
+**Examples**
+
+[TCPServer.cpp](socket_programming/TCPServer.cpp) and [TCPClient.cpp](socket_programming/TCPClient.cpp)
+
+[UDPServer.cpp](socket_programming/UDPServer.cpp) and [UDPClient.cpp](socket_programming/UDPClient.cpp)
+
 ### Steps on the `server` side
 
 -   Create a socket with the `socket()` system call
@@ -726,3 +739,227 @@ if (s == -1) { // some error has occurred
 ![](pics/18.png)
 
 ![](pics/19.png)
+
+# Advanced Techniques
+
+## Blocking
+
+-   The `accept()`, `connect()`, `recv()` and `recvfrom()` functions are blocking calls
+-   When we first create the socket descriptor with `socket()`, the kernel sets it to blocking
+-   If we don't want a socket to be blocking, we have to make a call to `fcntl()`
+
+```cpp
+#include <unistd.h>
+#include <fcntl.h>
+
+sockfd = socket(AF_INET, SOCK_STREAM, 0);
+fcntl(sockfd, F_SETFL, O_NONBLOCK);
+```
+
+-   By setting a socket to non-blocking, we can effectively **poll** the socket for information
+-   If we try to read from a non-blocking socket and there's no data there, it's not allowed to block — it will return `-1` and `errno` will be set to `EAGAIN` or `EWOULDBLOCK`
+-   **This type of polling is a bad idea**
+
+## `poll()`: Synchronous I/O Multiplexing
+
+-   What we really want to be able to do is somehow monitor a bunch of sockets at once and then handle the ones that have data ready
+-   This way we don't have to continously poll all those sockets to see which are ready to read
+-   We can avoid polling by using the `poll()` system call
+-   In a nutshell, we're going to ask the operating system to do all the dirty work for us, and just let us know when some data is ready to read on which sockets
+-   In the meantime, our process can go to sleep, saving system resources
+-   The general gameplan is to keep an array of `struct pollfds` with information about which socket descriptors we want to monitor, and what kind of events we want to monitor for. The OS will block on the `poll()` call until one of those events occurs (e.g. "socket ready to read!") or until a user-specified timeout occurs
+-   Usefully, a `listen()`ing socket will return "ready to read" when a new incoming connection is ready to be `accept()`ed
+
+```cpp
+#include <poll.h>
+
+int poll(struct pollfd fds[], nfds_t nfds, int timeout);
+```
+
+-   **fds**: array of information about which sockets to monitor\
+    **nfds**: count of elements in the array\
+    **timeout**: timeout in milliseconds
+-   Returns the number of elements in the pfds array for which events have occurred
+
+```cpp
+struct pollfd {
+    int fd;         // the socket descriptor
+    short events;   // bitmap of events we're interested in
+    short revents;  // when poll() returns, bitmap of events that occurred
+};
+```
+
+-   `events` fields is bitmap-OR of the following:
+    ```cpp
+    POLLIN    // Alert me when data is ready to recv() on this socket.
+    POLLOUT	  // Alert me when I can send() data to this socket without blocking.
+    ```
+
+```cpp
+#include <poll.h>
+#include <stdio.h>
+
+int main() {
+    struct pollfd pfds[1];  // More if we want to monitor more
+
+    pfds[0].fd = 0;           // Standard input
+    pfds[0].events = POLLIN;  // Tell me when ready to read
+
+    // If we needed to monitor other things, as well:
+    // pfds[1].fd = some_socket; // Some socket descriptor
+    // pfds[1].events = POLLIN;  // Tell me when ready to read
+
+    printf("Hit RETURN or wait 2.5 seconds for timeout\n");
+
+    int num_events = poll(pfds, 1, 2500);  // 2.5 second timeout
+
+    if (num_events == 0) {
+        printf("Poll timed out!\n");
+    } else {
+        int pollin_happened = pfds[0].revents & POLLIN;
+
+        if (pollin_happened) {
+            printf("File descriptor %d is ready to read\n", pfds[0].fd);
+        } else {
+            printf("Unexpected event occurred: %d\n", pfds[0].revents);
+        }
+    }
+
+    return 0;
+}
+
+```
+
+-   **How to add new file descriptors to the set passed to `poll()`?**: Make sure we have enough space in the array for all we need, or `realloc()` more space as needed
+-   **How to delete items from the set of file descriptors?**:
+    -   We can copy the last element in the array over-top the one we're deleting and then pass in one fewer as the count to `poll()`
+    -   Another option is that we can set any fd field to a negative number and `poll()` will ignore it
+-   **Example**: [polling.cpp](socket_programming/advanced/polling.cpp)
+
+## `select()`: Synchronous I/O Multiplexing, Old School
+
+-   **Consider the situation**: We are a server and we want to listen for incoming connections as well as keep reading from the connections we already have
+-   `select()` gives the power to monitor several sockets at the same time
+-   It'll tell us which ones are ready for reading, which are ready for writing, and which sockets have raised exceptions, if we really want to know that
+
+```cpp
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/select.h>
+#include <unistd.h>
+
+int select(int numfds, fd_set *readfds, fd_set *writefds,
+            fd_set *exceptfds, struct timeval *timeout);
+```
+
+-   Mointors **sets** of file descriptors, in particular `readfds`, `writefds` and `exceptfds`
+-   The parameter **numfds** should be set to the values of the highest file descriptor plus one
+-   The time structure allows to specify a timeout period. If the time is exceeded and `select()` still hasn't found any ready file descriptors, it'll return so we can continue processing
+
+    ```cpp
+    struct timeval {
+        int tv_sec;     // seconds
+        int tv_usec;    // microseconds
+    };
+    ```
+
+    -   If we set the fields in our `struct timeval` to `0`, `select()` will timeout immediately, effectively polling all the file descriptors in our sets
+    -   If we set the parameter timeout to `NULL`, it will never timeout, and will wait until the first file descriptor is ready
+
+-   If we don't care about waiting for a certain set, we can just set it to `NULL` in the call to `select()`
+-   When `select()` returns, `readfds` will be **modified** to reflect which of the file descriptors we selected which is ready for reading. We can test them with the macro `FD_ISSET()`
+-   **Returns** the number of descriptors in the set on success, `0` if the timeout was reached, or `-1` on error
+
+| Function                         | Description                       |
+| -------------------------------- | --------------------------------- |
+| `FD_SET(int fd, fd_set *set);`   | Add fd to the set                 |
+| `FD_CLR(int fd, fd_set *set);`   | Remove fd from the set            |
+| `FD_ISSET(int fd, fd_set *set);` | Return `true` if fd is in the set |
+| `FD_ZERO(fd_set *set);`          | Clear all entries from the set    |
+
+```cpp
+#include <stdio.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#define STDIN 0  // file descriptor for standard input
+
+int main() {
+    struct timeval tv;
+    fd_set readfds;
+
+    tv.tv_sec = 2;
+    tv.tv_usec = 500000;
+
+    FD_ZERO(&readfds);
+    FD_SET(STDIN, &readfds);
+
+    // don't care about writefds and exceptfds:
+    select(STDIN + 1, &readfds, NULL, NULL, &tv);
+
+    if (FD_ISSET(STDIN, &readfds))
+        printf("A key was pressed!\n");
+    else
+        printf("Timed out.\n");
+
+    return 0;
+}
+```
+
+-   **What happens if a socket in the read set closes the connection?**: `select()` returns with that socket descriptor set as “ready to read”. When we actually do `recv()` from it, `recv()` will return `0`. That's how we know the client has closed the connection
+-   If you have a socket that is `listen()`ing, we can check to see if there is a new connection by putting that socket's file descriptor in the `readfds` set. A `listen()`ing socket will return "ready to read" when a new incoming connection is ready to be `accept()`ed
+-   **Example**: [selectserver.cpp](socket_programming/advanced/selectserver.cpp)
+
+## Handling partial `send()`s
+
+```cpp
+#include <sys/types.h>
+#include <sys/socket.h>
+
+int sendall(int s, char *buf, int *len)
+{
+    int total = 0;        // how many bytes we've sent
+    int bytesleft = *len; // how many we have left to send
+    int n;
+
+    while(total < *len) {
+        n = send(s, buf+total, bytesleft, 0);
+        if (n == -1) { break; }
+        total += n;
+        bytesleft -= n;
+    }
+
+    *len = total; // return number actually sent here
+
+    return n==-1?-1:0; // return -1 on failure, 0 on success
+}
+
+// Usage
+char buf[10] = "Beej!";
+int len;
+
+len = strlen(buf);
+if (sendall(s, buf, &len) == -1) {
+    perror("sendall");
+    printf("We only sent %d bytes because of the error!\n", len);
+}
+```
+
+## Broadcasting Packets
+
+-   We have to set the socket option `SO_BROADCAST` before we can send a broadcast packet out on the network
+-   **How to specify the destination address for a broadcast message?**:
+    -   Send the data to a specific subnet’s broadcast address
+    -   Send the data to the **global** broadcast address i.e. `255.255.255.255`, aka `INADDR_BROADCAST`
+
+```cpp
+int broadcast = 1;
+//char broadcast = '1'; // if that doesn't work, try this
+
+// this call is what allows broadcast packets to be sent
+if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) == -1) {
+    perror("setsockopt (SO_BROADCAST)");
+    exit(1);
+}
+```

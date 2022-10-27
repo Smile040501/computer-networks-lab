@@ -12,21 +12,23 @@
 #include <iostream>
 using namespace std;
 
+using ll = long long;
+
 #define PORT 3490  // The port clients will be connecting to
 
 #define BACKLOG 10  // How many pending connections queue will hold
 
 // TCPServer class to create a TCP server
 class TCPServer {
-    int sockfd;                                // Socket file descriptor on which the server will listen
-    int port;                                  // Port on which the server will be bound to
+    ll sockfd;                                 // Socket file descriptor on which the server will listen
+    ll port;                                   // Port on which the server will be bound to
     string myIP;                               // IP address of the server
     struct addrinfo *serverAddr, *serverInfo;  // Server's address information
-    const int MAX_BUFF_LEN;                    // Maximum buffer length while receiving the data
+    const ll MAX_BUFF_LEN;                     // Maximum buffer length while receiving the data
 
    public:
     // Constructor
-    TCPServer(int port, int &status, int domain = AF_UNSPEC /* Don't care IPv4 or IPv6 */, int maxBufLen = 1e6)
+    TCPServer(ll port, ll &status, ll domain = AF_UNSPEC /* Don't care IPv4 or IPv6 */, ll maxBufLen = 1e6)
         : sockfd{-1}, port{port}, myIP{""}, serverAddr{nullptr}, serverInfo{nullptr}, MAX_BUFF_LEN{maxBufLen} {
         // Mark the status as -1 to denote error
         status = -1;
@@ -41,7 +43,7 @@ class TCPServer {
         hints.ai_socktype = SOCK_STREAM;  // For TCP socket
         hints.ai_flags = AI_PASSIVE;      // Use my IP
 
-        int rv = 0;  // Return value
+        ll rv = 0;  // Return value
 
         // Get the server address info
         if ((rv = getaddrinfo(nullptr, to_string(port).c_str(), &hints, &serverInfo)) != 0) {
@@ -58,8 +60,8 @@ class TCPServer {
             }
 
             // Allow the port to be used again
-            int yes = 1;
-            if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+            ll yes = 1;
+            if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
                 perror("server: setsockopt");
                 return;
             }
@@ -101,13 +103,21 @@ class TCPServer {
     }
 
     // Function to get the socket file descriptor of the server
-    int getSockFD() {
+    ll getSockFD() {
         return sockfd;
     }
 
+    void setSockFD(ll fd) {
+        sockfd = fd;
+    }
+
     // Function to get the port on which the server is listening
-    int getPort() {
+    ll getPort() {
         return port;
+    }
+
+    string getIP() {
+        return myIP;
     }
 
     // Function to get the address information of the server
@@ -116,7 +126,7 @@ class TCPServer {
     }
 
     // Function to start the server for listening for connections on the port
-    int startListening(int backlogQSize) {
+    ll startListening(ll backlogQSize) {
         if (sockfd == -1) return -1;
 
         // start listening on the socket file descriptor
@@ -130,11 +140,11 @@ class TCPServer {
     }
 
     // Function to accept the incoming connections from the client
-    int acceptConnection(struct sockaddr_storage *clientAddr /* Clients's address information */) {
+    ll acceptConnection(struct sockaddr_storage *clientAddr /* Clients's address information */) {
         if (sockfd == -1) return -1;
 
         // The new socket file descriptor which will be used for communication with this client
-        int newFd = -1;
+        ll newFd = -1;
 
         // Size of the struct
         socklen_t addrLen = sizeof(*clientAddr);
@@ -150,24 +160,35 @@ class TCPServer {
     }
 
     // Function to send data to the client given its socket file descriptor to communicate
-    int sendData(int fd, string data, int flags = 0) {
+    ll sendData(ll fd, string data, ll flags = 0) {
         if (sockfd == -1) return -1;
 
-        // Send data to the client
-        if (send(fd, data.c_str(), data.length(), flags) == -1) {
-            perror("server: send");
-            return -1;
+        ll len = data.length();  // Length of the data to send
+        ll total = 0;            // How many bytes we've sent
+        ll bytesLeft = len;      // How many bytes we are left to send
+
+        // While we have not fully sent the data to the client
+        while (total < len) {
+            // Send the remaining to the client
+            ll numBytes = send(fd, data.c_str() + total, bytesLeft, flags);
+            if (numBytes == -1) {
+                perror("server: send");
+                return -1;
+            }
+            // Update the variables
+            total += numBytes;
+            bytesLeft -= numBytes;
         }
 
         return 0;
     }
 
     // Function to receive data from the client given its socket file descriptor to communicate
-    string receiveData(int fd, int flags = 0) {
+    string receiveData(ll fd, ll flags = 0) {
         if (sockfd == -1) throw "Invalid socket";
 
         // The number of bytes read from the client
-        int numBytes = 0;
+        ll numBytes = 0;
 
         // Buffer to read the input message received from the client
         char buff[MAX_BUFF_LEN];
@@ -227,7 +248,7 @@ class TCPServer {
 // Handler for SIGCHLD exception
 void sigchld_handler(int s) {
     // waitpid() might overwrite errno, so we save and restore it:
-    int saved_errno = errno;
+    ll saved_errno = errno;
 
     while (waitpid(-1, NULL, WNOHANG) > 0)
         ;
@@ -236,16 +257,16 @@ void sigchld_handler(int s) {
 }
 
 int main() {
-    int status = 0;
+    ll status = 0;
     // Creating a TCP server
     TCPServer server(PORT, status);
     if (status == -1) {
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     // Start listening on the server
     if (server.startListening(BACKLOG) == -1) {
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     struct sigaction sa;
@@ -254,12 +275,12 @@ int main() {
     sa.sa_flags = SA_RESTART;
     if (sigaction(SIGCHLD, &sa, NULL) == -1) {
         perror("sigaction");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     // `sockaddr_storage` struct populate the client address from which the packet is received
     struct sockaddr_storage clientAddr;
-    int newFd = 0;
+    ll newFd = 0;
 
     while (1) {
         // Accept connections from the client
@@ -274,19 +295,19 @@ int main() {
             try {
                 std::cout << "Message from client: " << server.receiveData(newFd) << "\n";
             } catch (exception &ex) {
-                exit(1);
+                exit(EXIT_FAILURE);
             }
 
             // Send data to the client
             if (server.sendData(newFd, "Hi from server!") == -1) {
-                exit(1);
+                exit(EXIT_FAILURE);
             }
 
             close(newFd);
-            exit(0);
+            exit(EXIT_SUCCESS);
         }
         close(newFd);  // parent doesn't need this
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }

@@ -12,21 +12,23 @@
 #include <iostream>
 using namespace std;
 
+using ll = long long;
+
 #define PORT 4950  // The port clients will be connecting to
 
 #define BACKLOG 10  // How many pending connections queue will hold
 
 // UDPServer class to create a UDP server
 class UDPServer {
-    int sockfd;                                // Socket file descriptor on which the server will listen
-    int port;                                  // Port on which the server will be bound to
+    ll sockfd;                                 // Socket file descriptor on which the server will listen
+    ll port;                                   // Port on which the server will be bound to
     string myIP;                               // IP address of the server
     struct addrinfo *serverAddr, *serverInfo;  // Server's address information
-    const int MAX_BUFF_LEN;                    // Maximum buffer length while receiving the data
+    const ll MAX_BUFF_LEN;                     // Maximum buffer length while receiving the data
 
    public:
     // Constructor
-    UDPServer(int port, int &status, int domain = AF_UNSPEC /* Don't care IPv4 or IPv6 */, int maxBufLen = 1e6)
+    UDPServer(ll port, ll &status, ll domain = AF_UNSPEC /* Don't care IPv4 or IPv6 */, ll maxBufLen = 1e6)
         : sockfd{-1}, port{port}, myIP{""}, serverAddr{nullptr}, serverInfo{nullptr}, MAX_BUFF_LEN{maxBufLen} {
         // Mark the status as -1 to denote error
         status = -1;
@@ -41,7 +43,7 @@ class UDPServer {
         hints.ai_socktype = SOCK_DGRAM;  // For UDP socket
         hints.ai_flags = AI_PASSIVE;     // Use my IP
 
-        int rv = 0;  // Return value
+        ll rv = 0;  // Return value
 
         // Get the server address info
         if ((rv = getaddrinfo(nullptr, to_string(port).c_str(), &hints, &serverInfo)) != 0) {
@@ -58,8 +60,8 @@ class UDPServer {
             }
 
             // Allow the port to be used again
-            int yes = 1;
-            if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+            ll yes = 1;
+            if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
                 perror("server: setsockopt");
                 return;
             }
@@ -101,13 +103,21 @@ class UDPServer {
     }
 
     // Function to get the socket file descriptor of the server
-    int getSockFD() {
+    ll getSockFD() {
         return sockfd;
     }
 
+    void setSockFD(ll fd) {
+        sockfd = fd;
+    }
+
     // Function to get the port on which the server is listening
-    int getPort() {
+    ll getPort() {
         return port;
+    }
+
+    string getIP() {
+        return myIP;
     }
 
     // Function to get the address information of the server
@@ -116,27 +126,38 @@ class UDPServer {
     }
 
     // Function to send data to the client
-    int sendData(string data, struct sockaddr_storage *clientAddr, int flags = 0) {
+    ll sendData(string data, struct sockaddr_storage *clientAddr, ll flags = 0) {
         if (sockfd == -1) return -1;
 
         // Length of the struct
         socklen_t addrLen = sizeof(*clientAddr);
 
-        // Send data to the client
-        if (sendto(sockfd, data.c_str(), data.length(), flags, (struct sockaddr *)clientAddr, addrLen) == -1) {
-            perror("server: sendto");
-            return -1;
+        ll len = data.length();  // Length of the data to send
+        ll total = 0;            // How many bytes we've sent
+        ll bytesLeft = len;      // How many bytes we are left to send
+
+        // While we have not fully sent the data to the client
+        while (total < len) {
+            // Send the remaining to the client
+            ll numBytes = sendto(sockfd, data.c_str() + total, bytesLeft, flags, (struct sockaddr *)clientAddr, addrLen);
+            if (numBytes == -1) {
+                perror("server: sendto");
+                return -1;
+            }
+            // Update the variables
+            total += numBytes;
+            bytesLeft -= numBytes;
         }
 
         return 0;
     }
 
     // Function to receive data from the client
-    pair<string, struct sockaddr_storage *> receiveData(int flags = 0) {
+    pair<string, struct sockaddr_storage *> receiveData(ll flags = 0) {
         if (sockfd == -1) throw "Invalid socket";
 
         // The number of bytes read from the client
-        int numBytes = 0;
+        ll numBytes = 0;
 
         struct sockaddr_storage *clientAddr = new struct sockaddr_storage();
         socklen_t addrLen = sizeof(*clientAddr);
@@ -199,7 +220,7 @@ class UDPServer {
 // Handler for SIGCHLD exception
 void sigchld_handler(int s) {
     // waitpid() might overwrite errno, so we save and restore it:
-    int saved_errno = errno;
+    ll saved_errno = errno;
 
     while (waitpid(-1, NULL, WNOHANG) > 0)
         ;
@@ -208,7 +229,7 @@ void sigchld_handler(int s) {
 }
 
 int main() {
-    int status = 0;
+    ll status = 0;
     // Creating a UDP server
     UDPServer server(PORT, status, AF_INET);
     if (status == -1) {
@@ -230,7 +251,7 @@ int main() {
 
             std::cout << "server: got packet from " << UDPServer::getIP((struct sockaddr *)p.second) << ":" << UDPServer::getPort((struct sockaddr *)p.second) << "\n";
 
-            cout << "server: packet contains \"" << p.first << "\"\n";
+            std::cout << "server: packet contains \"" << p.first << "\"\n";
 
             if (server.sendData("Hi from server!", p.second) == -1) {
                 exit(1);
