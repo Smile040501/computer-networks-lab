@@ -2,7 +2,7 @@
   - [What is a Socket?](#what-is-a-socket)
   - [Key concepts](#key-concepts)
     - [TCP vs UDP](#tcp-vs-udp)
-    - [Network Byte Order](#network-byte-order)
+    - [Network Byte Order: `htonl()`, `htons()`, `ntohl()` and `ntohs()`](#network-byte-order-htonl-htons-ntohl-and-ntohs)
   - [Library Utils](#library-utils)
     - [`structs`](#structs)
       - [`addrinfo`](#addrinfo)
@@ -21,6 +21,7 @@
       - [`gethostname()`: Who am I?](#gethostname-who-am-i)
       - [`socket()`: Get the File Descriptor](#socket-get-the-file-descriptor)
       - [`bind()`: What port am I on?](#bind-what-port-am-i-on)
+        - [`setsockopt()` and `getsockopt()`](#setsockopt-and-getsockopt)
       - [`connect()`: Hey you!](#connect-hey-you)
       - [`listen()`: Will somebody please call me?](#listen-will-somebody-please-call-me)
       - [`accept()`: Thank you for calling me!](#accept-thank-you-for-calling-me)
@@ -29,16 +30,45 @@
       - [`close()` and `shutdown()`: Get outta my face!](#close-and-shutdown-get-outta-my-face)
       - [`perror()` and `strerror()`: Oh No!](#perror-and-strerror-oh-no)
     - [Jumping from IPv4 to IPv6](#jumping-from-ipv4-to-ipv6)
+    - [Others](#others)
+      - [`inet_ntoa()`, `inet_aton()` and `inet_addr`](#inet_ntoa-inet_aton-and-inet_addr)
+      - [Hostnames: `struct hostent`, `gethostbyname()` and `gethostbyaddr()`](#hostnames-struct-hostent-gethostbyname-and-gethostbyaddr)
+      - [Network Names: `struct netent`](#network-names-struct-netent)
+      - [Protocol Names: `struct protoent`](#protocol-names-struct-protoent)
+      - [Service Names: `struct servent`](#service-names-struct-servent)
   - [Client-Server Communication](#client-server-communication)
     - [Procedure](#procedure)
     - [Steps on the `server` side](#steps-on-the-server-side)
     - [Steps on the `client` side](#steps-on-the-client-side)
 - [Advanced Techniques](#advanced-techniques)
-  - [Blocking](#blocking)
+  - [Blocking: `fcntl()`](#blocking-fcntl)
   - [`poll()`: Synchronous I/O Multiplexing](#poll-synchronous-io-multiplexing)
   - [`select()`: Synchronous I/O Multiplexing, Old School](#select-synchronous-io-multiplexing-old-school)
   - [Handling partial `send()`s](#handling-partial-sends)
   - [Broadcasting Packets](#broadcasting-packets)
+- [Raw Sockets](#raw-sockets)
+  - [Ethernet Header](#ethernet-header)
+  - [IPv4 Header](#ipv4-header)
+    - [Generic checksum calculation function](#generic-checksum-calculation-function)
+  - [TCP header](#tcp-header)
+  - [UDP Header](#udp-header)
+  - [Using Raw Sockets](#using-raw-sockets)
+  - [Creating Packet Sniffers](#creating-packet-sniffers)
+    - [Opening a Raw Socket to sniff Ethernet Headers also](#opening-a-raw-socket-to-sniff-ethernet-headers-also)
+      - [Non-promiscuous and promiscuous mode](#non-promiscuous-and-promiscuous-mode)
+    - [Reception of the Network Packet](#reception-of-the-network-packet)
+    - [Extracting Header](#extracting-header)
+      - [Ethernet Header](#ethernet-header-1)
+      - [IP Header](#ip-header)
+      - [TCP Header](#tcp-header-1)
+      - [UDP Header](#udp-header-1)
+    - [Extracting Data](#extracting-data)
+  - [Sending packets with a raw socket](#sending-packets-with-a-raw-socket)
+    - [What is `struct ifreq`?](#what-is-struct-ifreq)
+    - [Get the Index of the Interface to Send a packet](#get-the-index-of-the-interface-to-send-a-packet)
+    - [Get the MAC and IP address of the Interface](#get-the-mac-and-ip-address-of-the-interface)
+    - [Store Interface Index in `struct sockaddr_ll`](#store-interface-index-in-struct-sockaddr_ll)
+    - [Constructing the Headers and Sending the packet](#constructing-the-headers-and-sending-the-packet)
 
 # Socket Programming
 
@@ -112,7 +142,7 @@ What's a connection?
         -   DNS, RPC (message-oriented)
         -   DHCP (bootstrapping)
 
-### Network Byte Order
+### Network Byte Order: `htonl()`, `htons()`, `ntohl()` and `ntohs()`
 
 -   The port number and IP address used in the **AF_INET** socket address structure are expected to follow the network byte ordering (big-endian)
 -   Hence, we want to **convert the numbers to Network Byte Order** before they go out on the wire, and **convert them to Host Byte Order** as they come in off the wire
@@ -509,6 +539,57 @@ int bind(int sockfd, struct sockaddr *local_addr, socklen_t addrlen)
     -   Pointer to structure containing details of the address to bind to, the value `INADDR_ANY` is typically used for this. It will depend on the protocol which is used.
     -   Length of the address structure
 -   `bind()` call will bind the socket with the current IP address on the specified port
+
+##### `setsockopt()` and `getsockopt()`
+
+```cpp
+#include <sys/types.h>
+#include <sys/socket.h>
+
+int getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen);
+
+int setsockopt(int s, int level, int optname, const void *optval, socklen_t optlen);
+```
+
+```cpp
+// Option Names
+
+// Bind this socket to a symbolic device name like `eth0`
+// instead of using bind() to bind it to an IP address.
+SO_BINDTODEVICE
+
+// Allows other sockets to bind() to this port
+// unless there is an active listening socket bound to the port already
+SO_REUSEADDR
+
+// Allows UDP datagram (SOCK_DGRAM) sockets to send and receive packets
+// sent to and from the broadcast address.
+// Does nothing—NOTHING!!—to TCP stream sockets!
+SOCK_DGRAM
+```
+
+```cpp
+// Example
+
+int optval;
+int optlen;
+char *optval2;
+
+// set SO_REUSEADDR on a socket to true (1):
+optval = 1;
+setsockopt(s1, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
+
+// bind a socket to a device name (might not work on all systems):
+optval2 = "eth1"; // 4 bytes long, so 4, below:
+setsockopt(s2, SOL_SOCKET, SO_BINDTODEVICE, optval2, 4);
+
+// see if the SO_BROADCAST flag is set:
+getsockopt(s3, SOL_SOCKET, SO_BROADCAST, &optval, &optlen);
+if (optval != 0) {
+    print("SO_BROADCAST enabled on s3!\n");
+}
+```
+
 -   Sometimes, when we try to rerun a server and `bind()` fails, claiming **Address already in use** What does that mean? Well, a little bit of a socket that was connected is still hanging around in the kernel, and it's hogging the port. We can either wait for it to clear (a minute or so), or add our code to the program allowing it to reuse the port
 
 ```cpp
@@ -681,6 +762,130 @@ if (s == -1) { // some error has occurred
 -   Instead of `gethostbyname()`, use the superior `getaddrinfo()`
 -   Instead of `gethostbyaddr()`, use the superior `getnameinfo()`
 
+### Others
+
+#### `inet_ntoa()`, `inet_aton()` and `inet_addr`
+
+**ALL THESE ARE DEPRECATED! as they don't handle IPv6. Use `inet_pton()` or `inet_ntop()` instead!!**
+
+-   Convert IP addresses from a dots-and-number string to a `struct in_addr` and back
+
+```cpp
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+char *inet_ntoa(struct in_addr in);
+int inet_aton(const char *cp, struct in_addr *inp);
+in_addr_t inet_addr(const char *cp);    // Same as `inet_aton`
+```
+
+#### Hostnames: `struct hostent`, `gethostbyname()` and `gethostbyaddr()`
+
+_**Note**: These two functions are superseded by `getaddrinfo()` and `getnameinfo()` In particular, `gethostbyname()` doesn’t work well with IPv6._
+
+-   Takes an Internet hostname and returns a `hostent` structure
+
+```cpp
+struct hostent *gethostbyname(const char *name);  // DEPRECATED!
+
+struct hostent *gethostbyaddr(const char *addr, int len, int type);
+```
+
+```cpp
+struct hostent {
+    // The real canonical host name
+    char *h_name;
+
+    // A list of aliases that can be accessed with arrays - the last element is `NULL`
+    char **h_aliases;
+
+    // The result’s address type, which really should be AF_INET for our purposes
+    int  h_addrtype;
+
+    // The length of the addresses in bytes, which is 4 for IP (version 4) addresses
+    int  h_length;
+
+    // A list of IP addresses for this host
+    // Although this is a char**, it's really an array of `struct in_addr*s`
+    // The last array element is `NULL`
+    char **h_addr_list;
+
+    // A commonly defined alias for `h_addr_list[0]`
+    // If we just want any old IP address for this host just use this field
+    h_addr
+};
+```
+
+```cpp
+// Example
+
+struct hostent *he;
+
+if ((he = gethostbyname("www.google.com")) == NULL) {  // get the host info
+    herror("gethostbyname");
+    return 2;
+}
+
+// print information about this host:
+printf("Official name is: %s\n", he->h_name);
+
+printf("    IP addresses: ");
+struct in_addr **addr_list; = (struct in_addr **)he->h_addr_list;
+
+for (int i = 0; addr_list[i] != NULL; i++) {
+    printf("%s ", inet_ntoa(*addr_list[i]));
+}
+```
+
+```cpp
+// Example
+
+
+struct in_addr ipv4addr;
+
+inet_pton(AF_INET, "192.0.2.34", &ipv4addr);
+struct hostent *he; he = gethostbyaddr(&ipv4addr, sizeof(ipv4addr), AF_INET);
+printf("Host name: %s\n", he->h_name);
+```
+
+#### Network Names: `struct netent`
+
+```cpp
+struct netent {
+    char *n_name;         /* official name of net */
+    char **n_aliases;     /* alias list */
+    int n_addrtype;       /* net address type */
+    unsigned long n_net;  /* network number, host-byte order */
+};
+```
+
+-   Functions: `getnetbyname()`, `getnetbyaddr()` and `getnetent()`
+
+#### Protocol Names: `struct protoent`
+
+```cpp
+struct protoent {
+    char *p_name;         /* official protocol name */
+    char **p_aliases;     /* alias list */
+    int  p_proto;         /* protocol number */
+};
+```
+
+-   Functions: `getprotobyname()`, `getprotobynumber()`, and `getprotoent()`
+
+#### Service Names: `struct servent`
+
+```cpp
+struct servent {
+    char *s_name;         /* official service name */
+    char **s_aliases;     /* alias list */
+    int s_port;           /* port number, network-byte order */
+    char *s_proto;        /* protocol to use */
+};
+```
+
+-   Functions: `getservbyname()`, `getservbyport()` and `getservent()`
+
 ## Client-Server Communication
 
 ### Procedure
@@ -742,7 +947,7 @@ if (s == -1) { // some error has occurred
 
 # Advanced Techniques
 
-## Blocking
+## Blocking: `fcntl()`
 
 -   The `accept()`, `connect()`, `recv()` and `recvfrom()` functions are blocking calls
 -   When we first create the socket descriptor with `socket()`, the kernel sets it to blocking
@@ -963,3 +1168,572 @@ if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) 
     exit(1);
 }
 ```
+
+# Raw Sockets
+
+https://www.pdbuchan.com/rawsock/rawsock.html
+
+-   Raw sockets can be used to construct a packet manually inside an application. In normal sockets when any data is send over the network, the kernel of the operating system adds some headers to it like IP header and TCP header. So an application only needs to take care of what data it is sending and what reply it is expecting
+-   But there are other cases when an application needs to set its own headers. Raw sockets are used in security related applications like **nmap**, **packets sniffer** etc.
+
+## Ethernet Header
+
+![](pics/25.png)
+
+-   First comes a **Preamble of 8 bytes**, each containing the bit pattern **10101010** (with the exception of the last byte, in which the last 2 bits are set to 11). This last byte is called the **Start of Frame** delimiter for 802.3 (i.e. 7 - 10101010 and 1 - 10101011)
+-   Next come two **MAC addresses**, one for the destination and one for the source. They are each **6 bytes long**
+-   Next comes the **Type** or **Length** field, depending on whether the frame is Ethernet or IEEE 802.3. The **Type** field specifies which process to give the frame to
+-   `Ethernet Header = Dest_Addr + Src_Addr + Type/Length = 6 + 6 + 2 = 14 bytes`
+
+```cpp
+#include <net/ethernet.h>  //For ether_header
+
+struct ethhdr {
+	unsigned char	h_dest[ETH_ALEN];	/* destination eth addr	*/
+	unsigned char	h_source[ETH_ALEN];	/* source ether addr	*/
+	/* unsigned short */
+	__be16 		    h_proto;		/* packet type ID field	*/
+};
+```
+
+## IPv4 Header
+
+![](pics/22.png)
+
+-   Checksum is 16-bit one's compliment of the one's compliment sum of all 16-bit words in the Header (i.e. before data)
+    -   For computing it, header checksum is kept as 0
+    -   At receiver end, computing header again should give 0
+-   Format of the **Type of Service** field:
+    ```txt
+    Bits 0-2: Precedence
+    	111 = Normal Control.
+    	110 = Internetwork Control.
+    	101 = CRITIC/ECP.
+    	100 = Flash Override.
+    	011 = Flash.
+    	010 = Immediate.
+    	001 = Priority.
+    	000 = Routine.
+    Bit 3 : Delay 0 = normal delay, 1 = low delay.
+    Bit 4 : Throughput 0 = normal throughput, 1 = high throughput.
+    Bit 5 : Reliability 0 = normal reliability, 1 = high reliability.
+    Bits 6-7: Reserved
+    ```
+
+```cpp
+#include <netinet/ip.h>   // Provides declarations for ip header
+
+struct iphdr {
+    unsigned int   version:4;
+    unsigned int   ihl:4;
+	uint8_t        tos;
+    uint16_t       tot_len;
+    uint16_t       id;
+    uint16_t       frag_off;
+    uint8_t        ttl;
+    uint8_t        protocol;
+    uint16_t       check;
+    uint32_t       saddr;
+    uint32_t       daddr;
+	/* The options start here */
+};  /* total IP header length: 20 bytes (= 160 bits) */
+
+struct ip {
+    unsigned int    ip_v:4;	        /* version */
+    unsigned int    ip_hl:4;	        /* header length */
+    uint8_t         ip_tos;	        /* type of service */
+    unsigned short  ip_len;	        /* total length */
+    unsigned short  ip_id;	        /* identification */
+    unsigned short  ip_off;          /* fragment offset field */
+    uint8_t         ip_ttl;	        /* time to live */
+    uint8_t         ip_p;            /* protocol */
+    unsigned short  ip_sum;          /* checksum */
+    struct in_addr  ip_src, ip_dst;	/* source and dest address */
+};
+```
+
+### Generic checksum calculation function
+
+```cpp
+unsigned short csum(unsigned short *ptr, int nbytes) {
+    unsigned long sum = 0;
+    /*
+        using a 32 bit accumulator (sum), we add
+        sequential 16 bit words to it, and at the end, fold back all the
+        carry bits from the top 16 bits into the lower 16 bits.
+    */
+    while (nbytes > 1) {
+        sum += *ptr++;
+        nbytes -= 2;
+    }
+
+    /* mop up an odd byte, if necessary */
+    if (nbytes == 1) {
+        unsigned short oddbyte = 0;
+        *((u_char *)&oddbyte) = *(u_char *)ptr;
+        sum += oddbyte;
+    }
+
+    /* add back carry outs from top 16 bits to low 16 bits */
+    sum = (sum >> 16) + (sum & 0xffff); /* add hi 16 to low 16 */
+    sum = sum + (sum >> 16);            /* add carry */
+    return (short)~sum;                 /* truncate to 16 bits */
+}
+```
+
+## TCP header
+
+![](pics/23.png)
+
+-   **Minimum 20-byte header**
+-   **TCP Header length - 4 bits**
+-   After Header length: **Reserved bits - 4 bits**
+-   The checksum field is the 16 bit one's complement of the one's complement sum of all 16 bit words in the header and text
+
+    -   If a segment contains an odd number of header and text octets to be checksummed, the last octet is padded on the right with zeros to form a 16 bit word for checksum purposes
+    -   While computing the checksum, the checksum field itself is replaced with zeros
+    -   It is the checksum of pseudo header, tcp header and payload
+    -   The checksum also covers a **96-bit pseudo header** conceptually prefixed to the TCP header. This pseudo header contains the Source Address, the Destination Address, the Protocol, and TCP length. This gives the TCP protection against misrouted segments. This information is carried in the Internet Protocol and is transferred across the TCP/Network interface in the arguments or results of calls by the TCP on the IP\
+        ![](pics/26.png)
+
+-   After the options, up to `65535 - 20 (IP) - 20 (TCP) = 65495` data bytes may follow
+
+```cpp
+#include <sys/types.h>
+#include <netinet/tcp.h>  // Provides declarations for tcp header
+
+struct tcphdr {
+	uint16_t source;
+	uint16_t dest;
+	uint32_t seq;
+	uint32_t ack_seq;
+	uint16_t doff:4;
+	uint16_t res1:4;
+	uint16_t res2:2;
+	uint16_t urg:1;
+	uint16_t ack:1;
+	uint16_t psh:1;
+	uint16_t rst:1;
+	uint16_t syn:1;
+	uint16_t fin:1;
+	uint16_t window;
+	uint16_t check;
+	uint16_t urg_ptr;
+};
+
+struct tcphdr {
+	uint16_t th_sport;	/* source port */
+	uint16_t th_dport;	/* destination port */
+	tcp_seq  th_seq;	/* sequence number */
+	tcp_seq  th_ack;	/* acknowledgement number */
+	uint8_t  th_off:4;	/* data offset */
+	uint8_t  th_x2:4;	/* (unused) */
+	uint8_t  th_flags;
+	uint16_t th_win;	/* window */
+	uint16_t th_sum;	/* checksum */
+	uint16_t th_urp;	/* urgent pointer */
+};  /* total tcp header length: 20 bytes (= 160 bits) */
+
+struct pseudo_header {
+    u_int32_t source_address;
+    u_int32_t dest_address;
+    u_int8_t  placeholder;
+    u_int8_t  protocol;
+    u_int16_t tcp_length;
+};	// 96-bit (12 bytes) pseudo header needed for tcp header checksum calculation
+```
+
+## UDP Header
+
+![](pics/24.png)
+
+-   UDP transmits segments consisting of an **8-byte header** followed by the payload
+-   The UDP length field includes the 8-byte header and the data. The minimum length is 8 bytes, to cover the header. The maximum length is 65,515 bytes
+-   Checksum is the 16-bit one's complement of the one's complement sum of a pseudo header of information from the IP header, the UDP header, and the data, padded with zero octets at the end (if necessary) to make a multiple of two octets\
+    ![](pics/27.png)
+
+```cpp
+#include <sys/types.h>
+#include <netinet/udp.h>  //Provides declarations for udp header
+
+struct udphdr {
+	uint16_t uh_sport;	/* source port */
+	uint16_t uh_dport;	/* destination port */
+	uint16_t uh_ulen;	/* udp length */
+	uint16_t uh_sum;	/* udp checksum */
+};
+
+struct udphdr {
+      uint16_t source;  /* source port */
+      uint16_t dest;    /* destination port */
+      uint16_t len;     /* udp length */
+      uint16_t check;   /* udp checksum */
+};  /* total udp header length: 8 bytes (= 64 bits) */
+
+
+struct pseudo_header {
+    u_int32_t source_address;
+    u_int32_t dest_address;
+    u_int8_t  placeholder;
+    u_int8_t  protocol;
+    u_int16_t udp_length;
+};	// 96 bit (12 bytes) pseudo header needed for udp header checksum calculation
+```
+
+## Using Raw Sockets
+
+A Transport Layer Packet: `Packet = IP Header + Transport Header + Data`
+
+Actual Packet: `Packet = Ethernet Header + IP Header + Transport Header + Data`
+
+`+` means to attach the binary data side by side
+
+**Create a Raw Socket**
+
+```cpp
+#include <sys/socket.h>
+#include <netinet/in.h>
+
+// TCP Socket
+int s = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+
+// UDP Socket
+int s = socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+```
+
+-   Creates a raw socket
+-   We have to provide the transport header along with the data
+
+**If we want to provide the IP header as well**
+
+```cpp
+// Method 1
+int s = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+```
+
+```cpp
+// Method 2
+int s = socket (AF_INET, SOCK_RAW, IPPROTO_TCP);
+
+int on = 1;
+if (setsockopt(s, IPPROTO_IP, IP_HDRINCL, &val, sizeof(on)) < 0) {
+	printf ("Error setting IP_HDRINCL. Error number : %d . Error message : %s \n" , errno , strerror(errno));
+	exit(0);
+}
+```
+
+-   A protocol of `IPPROTO_RAW` implies the `IP_HDRINCL` is enabled
+
+**Raw sockets use the standard `sockaddr_in` address structure defined in `ip.h`**
+
+```cpp
+struct sockaddr_in sin;
+
+// Address family
+sin.sin_family = AF_INET;
+
+// Port numbers
+sin.sin_port = htons(port);
+
+// IP addresses! Deprecated
+sin.sin_addr.s_addr = inet_addr("1.2.3.4");
+```
+
+## Creating Packet Sniffers
+
+Example: [packet_sniffer.cpp](socket_programming/raw_sockets/packet_sniffer.cpp)
+
+-   Packet sniffers are programs that intercept the network traffic flowing in and out of a system through network interfaces
+-   Packet sniffers are used for various needs like analyzing protocols, monitoring network, and assessing the security of a network
+-   Example: Wireshark
+-   To code a very simply sniffer in C the steps would be
+    -   Create a raw socket
+    -   Put it in a `recvfrom` loop and receive data on it (**A raw socket when put in `recvfrom` loop receives all incoming packets. This is because it is not bound to a particular address or port**)
+
+### Opening a Raw Socket to sniff Ethernet Headers also
+
+```cpp
+// Instead of
+int sock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+```
+
+```cpp
+int sock_raw = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL)) ;
+
+// To receive only IP packets, the macro is ETH_P_IP for the protocol field
+
+// Optional
+// bind to eth0 interface only
+const char *opt;
+opt = "eth0";
+if (setsockopt(sock_raw, SOL_SOCKET, SO_BINDTODEVICE, opt, strlen(opt) + 1) < 0) {
+    perror("setsockopt bind device");
+    close(sock);
+    exit(1);
+}
+```
+
+-   The third parameter `htons(ETH_P_ALL)` enables the socket to read full packet content including the ethernet headers
+-   It will:
+    -   Sniff both incoming and outgoing traffic
+    -   Sniff ALL ETHERNET FRAMES, which includes all kinds of IP packets and even more if there are any
+    -   Provides the Ethernet headers too , which contain the mac addresses
+
+#### Non-promiscuous and promiscuous mode
+
+-   By default, each network card minds its own business and reads only the frames directed to it
+-   It means that the network card discards all the packets that do not contain its own MAC address, which is called **non-promiscuous mode**
+-   We can make the sniffer work in **promiscuous mode** which will retrieve all the data packets, even the ones that are not addressed to its host
+-   For this, we need to set the network interface itself to the promiscuous mode, all we have to do is issue the `ioctl()` system call to an open socket on that interface
+
+```cpp
+/* set the network card in promiscuos mode*/
+// An ioctl() request has encoded in it whether the argument is an in parameter or out parameter
+// SIOCGIFFLAGS	0x8913		/* get flags			*/
+// SIOCSIFFLAGS	0x8914		/* set flags			*/
+struct ifreq ethreq;
+strncpy(ethreq.ifr_name, "eth0", IF_NAMESIZE);
+if (ioctl(sock_raw, SIOCGIFFLAGS, &ethreq) == -1) {
+    perror("ioctl");
+    close(sock_raw);
+    exit(1);
+}
+
+ethreq.ifr_flags |= IFF_PROMISC;
+if (ioctl(sock_raw, SIOCSIFFLAGS, &ethreq) == -1) {
+    perror("ioctl");
+    close(sock_raw);
+    exit(1);
+}
+```
+
+-   `ioctl` stands for **I/O control**, which manipulates the underlying device parameters of specific files
+-   `ioctl` takes three arguments:
+    -   The first argument must be an open file descriptor. We use the socket file descriptor bound to the network interface in our case
+    -   The second argument is a device-dependent request code. We can see we called `ioctl` twice. The first call uses request code `SIOCGIFFLAGS` to get flags, and the second call uses request code `SIOCSIFFLAGS` to set flags
+    -   The third argument is for returning information to the requesting process
+
+Now the sniffer can retrieve all the data packets received on the network card, no matter to which host the packets are addressed
+
+### Reception of the Network Packet
+
+```cpp
+int saddr_size, data_size;
+struct sockaddr saddr;
+
+unsigned char *buffer = (unsigned char *)malloc(65536);  // Its Big!
+
+while (1) {
+	saddr_size = sizeof(saddr);
+
+	// Receive a packet
+	data_size = recvfrom(sock_raw, buffer, 65536, 0, &saddr, (socklen_t *)&saddr_size);
+	if (data_size < 0) {
+		printf("Recvfrom error , failed to get packets\n");
+		return 1;
+	}
+
+	// Now process the packet...
+	// struct iphdr *iph = (struct iphdr *)(buffer + sizeof(struct ethhdr));
+    // switch (iph->protocol)
+}
+```
+
+### Extracting Header
+
+#### Ethernet Header
+
+```cpp
+struct ethhdr *eth = (struct ethhdr *)buffer;
+
+printf("Source Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n", eth->h_source[0], eth->h_source[1], eth->h_source[2], eth->h_source[3], eth->h_source[4], eth->h_source[5]);
+
+printf("Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n", eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3], eth->h_dest[4], eth->h_dest[5]);
+
+printf("Protocol : %d\n", eth->h_proto);
+```
+
+#### IP Header
+
+```cpp
+unsigned short iphdrlen;
+
+struct iphdr *iph = (struct iphdr *)(buffer + sizeof(struct ethhdr));
+iphdrlen = iph->ihl * 4;
+
+struct sockaddr_in source, dest;
+
+memset(&source, 0, sizeof(source));
+source.sin_addr.s_addr = iph->saddr;
+
+memset(&dest, 0, sizeof(dest));
+dest.sin_addr.s_addr = iph->daddr;
+
+printf("IP Version: %d\n", (unsigned int)iph->version);
+printf("IP Header Length : %d DWORDS or %d Bytes\n", (unsigned int)iph->ihl, ((unsigned int)(iph->ihl)) * 4);
+printf("Type Of Service : %d\n", (unsigned int)iph->tos);
+printf("IP Total Length : %d  Bytes(Size of Packet)\n", ntohs(iph->tot_len));
+printf("Identification : %d\n", ntohs(iph->id));
+printf("Reserved ZERO Field : %d\n",(unsigned int)iphdr->ip_reserved_zero);
+printf("Dont Fragment Field : %d\n",(unsigned int)iphdr->ip_dont_fragment);
+printf("More Fragment Field : %d\n",(unsigned int)iphdr->ip_more_fragment);
+printf("TTL : %d\n", (unsigned int)iph->ttl);
+printf("Protocol : %d\n", (unsigned int)iph->protocol);
+printf("Checksum : %d\n", ntohs(iph->check));
+printf("Source IP : %s\n", inet_ntoa(source.sin_addr));
+printf("Destination IP : %s\n", inet_ntoa(dest.sin_addr));
+```
+
+#### TCP Header
+
+```cpp
+unsigned short iphdrlen;
+
+struct iphdr *iph = (struct iphdr *)(Buffer + sizeof(struct ethhdr));
+iphdrlen = iph->ihl * 4;
+
+struct tcphdr *tcph = (struct tcphdr *)(Buffer + iphdrlen + sizeof(struct ethhdr));
+
+int header_size = sizeof(struct ethhdr) + iphdrlen + tcph->doff * 4;
+
+printf("Source Port : %u\n", ntohs(tcph->source));
+printf("Destination Port : %u\n", ntohs(tcph->dest));
+printf("Sequence Number  : %u\n", ntohl(tcph->seq));
+printf("Acknowledge Number : %u\n", ntohl(tcph->ack_seq));
+printf("Header Length      : %d DWORDS or %d BYTES\n", (unsigned int)tcph->doff, (unsigned int)tcph->doff * 4);
+printf("CWR Flag : %d\n",(unsigned int)tcph->cwr);
+printf("ECN Flag : %d\n",(unsigned int)tcph->ece);
+printf("Urgent Flag          : %d\n", (unsigned int)tcph->urg);
+printf("Acknowledgement Flag : %d\n", (unsigned int)tcph->ack);
+printf("Push Flag            : %d\n", (unsigned int)tcph->psh);
+printf("Reset Flag           : %d\n", (unsigned int)tcph->rst);
+printf("Synchronise Flag     : %d\n", (unsigned int)tcph->syn);
+printf("Finish Flag          : %d\n", (unsigned int)tcph->fin);
+printf("Window         : %d\n", ntohs(tcph->window));
+printf("Checksum       : %d\n", ntohs(tcph->check));
+printf("Urgent Pointer : %d\n", tcph->urg_ptr);
+```
+
+#### UDP Header
+
+```cpp
+unsigned short iphdrlen;
+
+struct iphdr *iph = (struct iphdr *)(Buffer + sizeof(struct ethhdr));
+iphdrlen = iph->ihl * 4;
+
+struct udphdr *udph = (struct udphdr *)(Buffer + iphdrlen + sizeof(struct ethhdr));
+
+int header_size = sizeof(struct ethhdr) + iphdrlen + sizeof udph;
+
+printf("Source Port      : %d\n", ntohs(udph->source));
+printf("Destination Port : %d\n", ntohs(udph->dest));
+printf("UDP Length       : %d\n", ntohs(udph->len));
+printf("UDP Checksum     : %d\n", ntohs(udph->check));
+```
+
+### Extracting Data
+
+```cpp
+unsigned char * data = (buffer + iphdrlen + sizeof(struct ethhdr) + sizeof(struct udphdr));
+```
+
+## Sending packets with a raw socket
+
+### What is `struct ifreq`?
+
+-   Linux supports some standard ioctls to configure network devices. They can be used on any socket's file descriptor, regardless of the family or type
+-   They pass an `ifreq` structure, which means that if we want to know some information about the network, like the interface index or interface name, we can use `ioctl` and it will fill the value of the `ifreq` structure passed as a third argument
+-   The `ifreq` structure is a way to get and set the network configuration
+-   It is defined in the **<net/if.h>** header file
+
+```cpp
+struct ifreq {
+	char            ifr_name[IFNAMSIZ]; /* Interface name */
+	struct sockaddr ifr_addr;
+	struct sockaddr ifr_dstaddr;
+	struct sockaddr ifr_broadaddr;
+	struct sockaddr ifr_netmask;
+	struct sockaddr ifr_hwaddr;
+	short           ifr_flags;
+	int             ifr_ifindex;
+	int             ifr_metric;
+	int             ifr_mtu;
+	struct ifmap    ifr_map;
+	char            ifr_slave[IFNAMSIZ];
+	char            ifr_newname[IFNAMSIZ];
+	char           *ifr_data;
+};
+```
+
+### Get the Index of the Interface to Send a packet
+
+```cpp
+// Method1
+if_nametoindex("etho0")
+```
+
+```cpp
+// Method2
+
+// Submit request for a socket descriptor to look up interface.
+int sd = 0;
+if ((sd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
+	perror("socket() failed to get socket descriptor for using ioctl() ");
+	exit(EXIT_FAILURE);
+}
+
+struct ifreq ifr;
+memset(&ifr, 0, sizeof(ifr));
+strncpy(ifr.ifr_name, "eth0", IFNAMSIZ - 1);  //giving name of Interface
+
+if (ioctl(sd, SIOCGIFINDEX, &ifr) < 0) {
+    perror("ioctl() failed to find interface ");
+    return (EXIT_FAILURE);
+}
+
+close(sd);
+printf("Index for interface %s is %i\n", interface, ifr.ifr_ifindex);
+```
+
+### Get the MAC and IP address of the Interface
+
+Macro for **MAC**: `SIOCGIFHWADDR`
+Macro for **IP**: `SIOCGIFADDR`
+
+### Store Interface Index in `struct sockaddr_ll`
+
+It will be used as an argument to `sendto()` function
+
+```cpp
+struct sockaddr_ll {
+	unsigned short	sll_family;
+	unsigned short  sll_protocol;
+	int		        sll_ifindex;
+	unsigned short	sll_hatype;
+	unsigned char	sll_pkttype;
+	unsigned char	sll_halen;
+	unsigned char	sll_addr[8];
+};
+```
+
+```cpp
+struct sockaddr_ll device;
+memset(&device, 0, sizeof(device));
+
+if ((device.sll_ifindex = if_nametoindex(interface)) == 0) {
+	perror("if_nametoindex() failed to obtain interface index ");
+	exit(EXIT_FAILURE);
+}
+
+// Fill out sockaddr_ll.
+device.sll_family = AF_PACKET;
+memcpy(device.sll_addr, src_mac, 6 * sizeof(uint8_t));
+device.sll_halen = 6;
+```
+
+### Constructing the Headers and Sending the packet
+
+Example: [tcp4.cpp](socket_programming/raw_sockets/tcp4_II.cpp) and [udp4.cpp](socket_programming/raw_sockets/udp4_II.cpp)
+
+Example: [tcp4_II.cpp](socket_programming/raw_sockets/tcp4_II.cpp) and [udp4_II.cpp](socket_programming/raw_sockets/udp4_II.cpp)
