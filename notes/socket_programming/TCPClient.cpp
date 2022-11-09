@@ -1,12 +1,11 @@
-#include <arpa/inet.h>
-#include <errno.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <signal.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include <arpa/inet.h>   // inet_pton() and inet_ntop()
+#include <errno.h>       // errno, perror()
+#include <netdb.h>       // struct addrinfo
+#include <netinet/in.h>  // IPPROTO_RAW, IPPROTO_IP, IPPROTO_TCP, INET_ADDRSTRLEN
+#include <sys/socket.h>  // needed for socket()
+#include <sys/types.h>   // needed for socket(), uint8_t, uint16_t, uint32_t
+#include <sys/wait.h>    // needed for waitpid()
+#include <unistd.h>      // close()
 
 #include <cstring>
 #include <iostream>
@@ -225,7 +224,7 @@ int main() {
     sa.sa_flags = SA_RESTART;
     if (sigaction(SIGCHLD, &sa, NULL) == -1) {
         perror("sigaction");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     // Send data to the server

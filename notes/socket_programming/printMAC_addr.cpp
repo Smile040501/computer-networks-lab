@@ -1,13 +1,29 @@
 // Get MAC Address from Interface Name
 
-#include <net/if.h>  // ifreq
-#include <string.h>  // strncpy
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <unistd.h>  // close
+#include <net/if.h>            // ifreq
+#include <netinet/if_ether.h>  // For ETH_ALEN
+#include <sys/ioctl.h>         // macro ioctl is defined
+#include <sys/socket.h>        // needed for socket()
+#include <unistd.h>            // close()
 
+#include <cstring>
+#include <iomanip>
 #include <iostream>
 using namespace std;
+
+void printMACAddress(unsigned char *addr) {
+    ios init(NULL);
+    // copying the default `cout` formatting
+    init.copyfmt(std::cout);
+
+    for (int i = 0; i < ETH_ALEN; ++i) {
+        std::cout << std::setfill('0') << std::setw(2) << std::hex << static_cast<unsigned int>(addr[i]);
+        if (i != ETH_ALEN - 1) std::cout << ':';
+    }
+
+    // resetting the default `cout` formatting
+    std::cout.copyfmt(init);
+}
 
 int main() {
     string iface = "eth0";
@@ -18,15 +34,19 @@ int main() {
     ifr.ifr_addr.sa_family = AF_INET;
     strncpy(ifr.ifr_name, iface.c_str(), IFNAMSIZ - 1);
 
-    ioctl(fd, SIOCGIFHWADDR, &ifr);
+    if (ioctl(fd, SIOCGIFHWADDR, &ifr) == -1) {
+        std::cerr << "ioctl\n";
+        exit(EXIT_FAILURE);
+    }
     // SIOCGIFADDR : For IP address
 
     close(fd);
 
-    unsigned char *mac = (unsigned char *)ifr.ifr_hwaddr.sa_data;
+    unsigned char *mac = reinterpret_cast<unsigned char *>(ifr.ifr_hwaddr.sa_data);
 
     // display mac address
-    printf("Mac : %.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    std::cout << "MAC: ";
+    printMACAddress(mac);
 
-    return 0;
+    return EXIT_SUCCESS;
 }

@@ -1191,8 +1191,7 @@ https://www.pdbuchan.com/rawsock/rawsock.html
 struct ethhdr {
 	unsigned char	h_dest[ETH_ALEN];	/* destination eth addr	*/
 	unsigned char	h_source[ETH_ALEN];	/* source ether addr	*/
-	/* unsigned short */
-	__be16 		    h_proto;		/* packet type ID field	*/
+	unsigned short  h_proto;		    /* packet type ID field	*/
 };
 ```
 
@@ -1223,6 +1222,19 @@ struct ethhdr {
 ```cpp
 #include <netinet/ip.h>   // Provides declarations for ip header
 
+struct ip {
+    unsigned int    ip_v:4;	        /* version */
+    unsigned int    ip_hl:4;	    /* header length */
+    uint8_t         ip_tos;	        /* type of service */
+    unsigned short  ip_len;	        /* total length */
+    unsigned short  ip_id;	        /* identification */
+    unsigned short  ip_off;         /* fragment offset field */
+    uint8_t         ip_ttl;	        /* time to live */
+    uint8_t         ip_p;           /* protocol */
+    unsigned short  ip_sum;         /* checksum */
+    struct in_addr  ip_src, ip_dst;	/* source and dest address */
+};
+
 struct iphdr {
     unsigned int   version:4;
     unsigned int   ihl:4;
@@ -1237,19 +1249,6 @@ struct iphdr {
     uint32_t       daddr;
 	/* The options start here */
 };  /* total IP header length: 20 bytes (= 160 bits) */
-
-struct ip {
-    unsigned int    ip_v:4;	        /* version */
-    unsigned int    ip_hl:4;	        /* header length */
-    uint8_t         ip_tos;	        /* type of service */
-    unsigned short  ip_len;	        /* total length */
-    unsigned short  ip_id;	        /* identification */
-    unsigned short  ip_off;          /* fragment offset field */
-    uint8_t         ip_ttl;	        /* time to live */
-    uint8_t         ip_p;            /* protocol */
-    unsigned short  ip_sum;          /* checksum */
-    struct in_addr  ip_src, ip_dst;	/* source and dest address */
-};
 ```
 
 ### Generic checksum calculation function
@@ -1299,8 +1298,20 @@ unsigned short csum(unsigned short *ptr, int nbytes) {
 -   After the options, up to `65535 - 20 (IP) - 20 (TCP) = 65495` data bytes may follow
 
 ```cpp
-#include <sys/types.h>
 #include <netinet/tcp.h>  // Provides declarations for tcp header
+
+struct tcphdr {
+	uint16_t th_sport;	/* source port */
+	uint16_t th_dport;	/* destination port */
+	uint32_t th_seq;	/* sequence number */
+	uint32_t th_ack;	/* acknowledgement number */
+	uint8_t  th_off:4;	/* data offset */
+	uint8_t  th_x2:4;	/* (unused) */
+	uint8_t  th_flags;
+	uint16_t th_win;	/* window */
+	uint16_t th_sum;	/* checksum */
+	uint16_t th_urp;	/* urgent pointer */
+};  /* total tcp header length: 20 bytes (= 160 bits) */
 
 struct tcphdr {
 	uint16_t source;
@@ -1321,19 +1332,6 @@ struct tcphdr {
 	uint16_t urg_ptr;
 };
 
-struct tcphdr {
-	uint16_t th_sport;	/* source port */
-	uint16_t th_dport;	/* destination port */
-	tcp_seq  th_seq;	/* sequence number */
-	tcp_seq  th_ack;	/* acknowledgement number */
-	uint8_t  th_off:4;	/* data offset */
-	uint8_t  th_x2:4;	/* (unused) */
-	uint8_t  th_flags;
-	uint16_t th_win;	/* window */
-	uint16_t th_sum;	/* checksum */
-	uint16_t th_urp;	/* urgent pointer */
-};  /* total tcp header length: 20 bytes (= 160 bits) */
-
 struct pseudo_header {
     u_int32_t source_address;
     u_int32_t dest_address;
@@ -1353,8 +1351,14 @@ struct pseudo_header {
     ![](pics/27.png)
 
 ```cpp
-#include <sys/types.h>
 #include <netinet/udp.h>  //Provides declarations for udp header
+
+struct udphdr {
+    uint16_t source;  /* source port */
+    uint16_t dest;    /* destination port */
+    uint16_t len;     /* udp length */
+    uint16_t check;   /* udp checksum */
+};  /* total udp header length: 8 bytes (= 64 bits) */
 
 struct udphdr {
 	uint16_t uh_sport;	/* source port */
@@ -1362,13 +1366,6 @@ struct udphdr {
 	uint16_t uh_ulen;	/* udp length */
 	uint16_t uh_sum;	/* udp checksum */
 };
-
-struct udphdr {
-      uint16_t source;  /* source port */
-      uint16_t dest;    /* destination port */
-      uint16_t len;     /* udp length */
-      uint16_t check;   /* udp checksum */
-};  /* total udp header length: 8 bytes (= 64 bits) */
 
 
 struct pseudo_header {
@@ -1426,19 +1423,6 @@ if (setsockopt(s, IPPROTO_IP, IP_HDRINCL, &val, sizeof(on)) < 0) {
 
 **Raw sockets use the standard `sockaddr_in` address structure defined in `ip.h`**
 
-```cpp
-struct sockaddr_in sin;
-
-// Address family
-sin.sin_family = AF_INET;
-
-// Port numbers
-sin.sin_port = htons(port);
-
-// IP addresses! Deprecated
-sin.sin_addr.s_addr = inet_addr("1.2.3.4");
-```
-
 ## Creating Packet Sniffers
 
 Example: [packet_sniffer.cpp](socket_programming/raw_sockets/packet_sniffer.cpp)
@@ -1468,7 +1452,7 @@ const char *opt;
 opt = "eth0";
 if (setsockopt(sock_raw, SOL_SOCKET, SO_BINDTODEVICE, opt, strlen(opt) + 1) < 0) {
     perror("setsockopt bind device");
-    close(sock);
+    close(sock_raw);
     exit(1);
 }
 ```
@@ -1517,6 +1501,8 @@ Now the sniffer can retrieve all the data packets received on the network card, 
 
 ### Reception of the Network Packet
 
+-   Use `struct sockaddr_ll` instead of `struct sockaddr` for detailed info
+
 ```cpp
 int saddr_size, data_size;
 struct sockaddr saddr;
@@ -1546,11 +1532,27 @@ while (1) {
 ```cpp
 struct ethhdr *eth = (struct ethhdr *)buffer;
 
-printf("Source Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n", eth->h_source[0], eth->h_source[1], eth->h_source[2], eth->h_source[3], eth->h_source[4], eth->h_source[5]);
+std::cout << "Source MAC Address:";
+printMACAddress(eth->h_source);
 
-printf("Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n", eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3], eth->h_dest[4], eth->h_dest[5]);
+std::cout << "Destination MAC Address:"
+printMACAddress(eth->h_dest);
 
 printf("Protocol : %d\n", eth->h_proto);
+```
+
+```cpp
+void printMACAddress(unsigned char *addr) {
+    ios init(NULL);
+    // copying the default `cout` formatting
+    init.copyfmt(std::cout);
+    for (ll i = 0; i < ETH_ALEN; ++i) {
+        std::cout << std::setfill('0') << std::setw(2) << std::hex << static_cast<unsigned int>(addr[i]);
+        if (i != ETH_ALEN - 1) std::cout << ':';
+    }
+    // resetting the default `cout` formatting
+    std::cout.copyfmt(init);
+}
 ```
 
 #### IP Header
@@ -1558,30 +1560,8 @@ printf("Protocol : %d\n", eth->h_proto);
 ```cpp
 unsigned short iphdrlen;
 
-struct iphdr *iph = (struct iphdr *)(buffer + sizeof(struct ethhdr));
+struct ip *iph = (struct ip *)(buffer + sizeof(struct ethhdr));
 iphdrlen = iph->ihl * 4;
-
-struct sockaddr_in source, dest;
-
-memset(&source, 0, sizeof(source));
-source.sin_addr.s_addr = iph->saddr;
-
-memset(&dest, 0, sizeof(dest));
-dest.sin_addr.s_addr = iph->daddr;
-
-printf("IP Version: %d\n", (unsigned int)iph->version);
-printf("IP Header Length : %d DWORDS or %d Bytes\n", (unsigned int)iph->ihl, ((unsigned int)(iph->ihl)) * 4);
-printf("Type Of Service : %d\n", (unsigned int)iph->tos);
-printf("IP Total Length : %d  Bytes(Size of Packet)\n", ntohs(iph->tot_len));
-printf("Identification : %d\n", ntohs(iph->id));
-printf("Reserved ZERO Field : %d\n",(unsigned int)iphdr->ip_reserved_zero);
-printf("Dont Fragment Field : %d\n",(unsigned int)iphdr->ip_dont_fragment);
-printf("More Fragment Field : %d\n",(unsigned int)iphdr->ip_more_fragment);
-printf("TTL : %d\n", (unsigned int)iph->ttl);
-printf("Protocol : %d\n", (unsigned int)iph->protocol);
-printf("Checksum : %d\n", ntohs(iph->check));
-printf("Source IP : %s\n", inet_ntoa(source.sin_addr));
-printf("Destination IP : %s\n", inet_ntoa(dest.sin_addr));
 ```
 
 #### TCP Header
@@ -1589,29 +1569,12 @@ printf("Destination IP : %s\n", inet_ntoa(dest.sin_addr));
 ```cpp
 unsigned short iphdrlen;
 
-struct iphdr *iph = (struct iphdr *)(Buffer + sizeof(struct ethhdr));
+struct ip *iph = (struct ip *)(Buffer + sizeof(struct ethhdr));
 iphdrlen = iph->ihl * 4;
 
 struct tcphdr *tcph = (struct tcphdr *)(Buffer + iphdrlen + sizeof(struct ethhdr));
 
 int header_size = sizeof(struct ethhdr) + iphdrlen + tcph->doff * 4;
-
-printf("Source Port : %u\n", ntohs(tcph->source));
-printf("Destination Port : %u\n", ntohs(tcph->dest));
-printf("Sequence Number  : %u\n", ntohl(tcph->seq));
-printf("Acknowledge Number : %u\n", ntohl(tcph->ack_seq));
-printf("Header Length      : %d DWORDS or %d BYTES\n", (unsigned int)tcph->doff, (unsigned int)tcph->doff * 4);
-printf("CWR Flag : %d\n",(unsigned int)tcph->cwr);
-printf("ECN Flag : %d\n",(unsigned int)tcph->ece);
-printf("Urgent Flag          : %d\n", (unsigned int)tcph->urg);
-printf("Acknowledgement Flag : %d\n", (unsigned int)tcph->ack);
-printf("Push Flag            : %d\n", (unsigned int)tcph->psh);
-printf("Reset Flag           : %d\n", (unsigned int)tcph->rst);
-printf("Synchronise Flag     : %d\n", (unsigned int)tcph->syn);
-printf("Finish Flag          : %d\n", (unsigned int)tcph->fin);
-printf("Window         : %d\n", ntohs(tcph->window));
-printf("Checksum       : %d\n", ntohs(tcph->check));
-printf("Urgent Pointer : %d\n", tcph->urg_ptr);
 ```
 
 #### UDP Header
@@ -1619,23 +1582,18 @@ printf("Urgent Pointer : %d\n", tcph->urg_ptr);
 ```cpp
 unsigned short iphdrlen;
 
-struct iphdr *iph = (struct iphdr *)(Buffer + sizeof(struct ethhdr));
+struct ip *iph = (struct ip *)(Buffer + sizeof(struct ethhdr));
 iphdrlen = iph->ihl * 4;
 
 struct udphdr *udph = (struct udphdr *)(Buffer + iphdrlen + sizeof(struct ethhdr));
 
 int header_size = sizeof(struct ethhdr) + iphdrlen + sizeof udph;
-
-printf("Source Port      : %d\n", ntohs(udph->source));
-printf("Destination Port : %d\n", ntohs(udph->dest));
-printf("UDP Length       : %d\n", ntohs(udph->len));
-printf("UDP Checksum     : %d\n", ntohs(udph->check));
 ```
 
 ### Extracting Data
 
 ```cpp
-unsigned char * data = (buffer + iphdrlen + sizeof(struct ethhdr) + sizeof(struct udphdr));
+unsigned char *data = buffer + iphdrlen + sizeof(struct ethhdr) + sizeof(struct udphdr);
 ```
 
 ## Sending packets with a raw socket

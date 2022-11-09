@@ -1,13 +1,15 @@
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include <arpa/inet.h>   // inet_pton() and inet_ntop()
+#include <errno.h>       // errno, perror()
+#include <netdb.h>       // struct addrinfo
+#include <netinet/in.h>  // IPPROTO_RAW, IPPROTO_IP, IPPROTO_TCP, INET_ADDRSTRLEN
+#include <poll.h>        // needed for pollfd and POLLIN
+#include <sys/socket.h>  // needed for socket()
+#include <sys/types.h>   // needed for socket(), uint8_t, uint16_t, uint32_t
+#include <unistd.h>      // close()
+
+#include <cstring>
+#include <iostream>
+using namespace std;
 
 #define PORT "9034"  // Port we're listening on
 
@@ -34,8 +36,8 @@ int get_listener_socket(void) {
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
     if ((rv = getaddrinfo(NULL, PORT, &hints, &ai)) != 0) {
-        fprintf(stderr, "selectserver: %s\n", gai_strerror(rv));
-        exit(1);
+        std::cerr << "selectserver: " << gai_strerror(rv) << '\n';
+        exit(EXIT_FAILURE);
     }
 
     for (p = ai; p != NULL; p = p->ai_next) {
@@ -115,8 +117,8 @@ int main(void) {
     listener = get_listener_socket();
 
     if (listener == -1) {
-        fprintf(stderr, "error getting listening socket\n");
-        exit(1);
+        std::cerr << "error getting listening socket\n";
+        exit(EXIT_SUCCESS);
     }
 
     // Add the listener to set
@@ -131,7 +133,7 @@ int main(void) {
 
         if (poll_count == -1) {
             perror("poll");
-            exit(1);
+            exit(EXIT_FAILURE);
         }
 
         // Run through the existing connections looking for data to read
@@ -150,11 +152,7 @@ int main(void) {
                     } else {
                         add_to_pfds(&pfds, newfd, &fd_count, &fd_size);
 
-                        printf(
-                            "pollserver: new connection from %s on "
-                            "socket %d\n",
-                            inet_ntop(remoteaddr.ss_family, get_in_addr((struct sockaddr *)&remoteaddr), remoteIP, INET6_ADDRSTRLEN),
-                            newfd);
+                        std::cout << "pollserver: new connection from " << inet_ntop(remoteaddr.ss_family, get_in_addr((struct sockaddr *)&remoteaddr), remoteIP, INET6_ADDRSTRLEN) << " on socket " << newfd << '\n';
                     }
                 } else {
                     // If not the listener, we're just a regular client
@@ -166,7 +164,8 @@ int main(void) {
                         // Got error or connection closed by client
                         if (nbytes == 0) {
                             // Connection closed
-                            printf("pollserver: socket %d hung up\n", sender_fd);
+                            std::cout << "pollserver: socket " << sender_fd << "hung up\n";
+
                         } else {
                             perror("recv");
                         }
@@ -195,5 +194,5 @@ int main(void) {
         }          // END looping through file descriptors
     }              // END for(;;)--and you thought it would never end!
 
-    return 0;
+    return EXIT_SUCCESS;
 }

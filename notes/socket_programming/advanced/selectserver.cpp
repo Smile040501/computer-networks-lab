@@ -1,13 +1,14 @@
+#include <arpa/inet.h>   // inet_pton() and inet_ntop()
+#include <errno.h>       // errno, perror()
+#include <netdb.h>       // struct addrinfo
+#include <netinet/in.h>  // IPPROTO_RAW, IPPROTO_IP, IPPROTO_TCP, INET_ADDRSTRLEN
+#include <sys/socket.h>  // needed for socket()
+#include <sys/types.h>   // needed for socket(), uint8_t, uint16_t, uint32_t
+#include <unistd.h>      // close()
 
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include <cstring>
+#include <iostream>
+using namespace std;
 
 #define PORT "9034"  // port we're listening on
 
@@ -49,8 +50,8 @@ int main(void) {
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
     if ((rv = getaddrinfo(NULL, PORT, &hints, &ai)) != 0) {
-        fprintf(stderr, "selectserver: %s\n", gai_strerror(rv));
-        exit(1);
+        std::cerr << "selectserver: " << gai_strerror(rv) << '\n';
+        exit(EXIT_FAILURE);
     }
 
     for (p = ai; p != NULL; p = p->ai_next) {
@@ -72,8 +73,8 @@ int main(void) {
 
     // if we got here, it means we didn't get bound
     if (p == NULL) {
-        fprintf(stderr, "selectserver: failed to bind\n");
-        exit(2);
+        std::cerr << "selectserver: failed to bind\n";
+        exit(EXIT_FAILURE);
     }
 
     freeaddrinfo(ai);  // all done with this
@@ -81,7 +82,7 @@ int main(void) {
     // listen
     if (listen(listener, 10) == -1) {
         perror("listen");
-        exit(3);
+        exit(EXIT_FAILURE);
     }
 
     // add the listener to the master set
@@ -95,7 +96,7 @@ int main(void) {
         read_fds = master;  // copy it
         if (select(fdmax + 1, &read_fds, NULL, NULL, NULL) == -1) {
             perror("select");
-            exit(4);
+            exit(EXIT_FAILURE);
         }
 
         // run through the existing connections looking for data to read
@@ -113,11 +114,8 @@ int main(void) {
                         if (newfd > fdmax) {     // keep track of the max
                             fdmax = newfd;
                         }
-                        printf(
-                            "selectserver: new connection from %s on "
-                            "socket %d\n",
-                            inet_ntop(remoteaddr.ss_family, get_in_addr((struct sockaddr *)&remoteaddr), remoteIP, INET6_ADDRSTRLEN),
-                            newfd);
+
+                        std::cout << "selectserver: new connection from " << inet_ntop(remoteaddr.ss_family, get_in_addr((struct sockaddr *)&remoteaddr), remoteIP, INET6_ADDRSTRLEN) << " on socket " << newfd << '\n';
                     }
                 } else {
                     // handle data from a client
@@ -125,7 +123,7 @@ int main(void) {
                         // got error or connection closed by client
                         if (nbytes == 0) {
                             // connection closed
-                            printf("selectserver: socket %d hung up\n", i);
+                            std::cout << "selectserver: socket " << i << " hung up\n";
                         } else {
                             perror("recv");
                         }
@@ -150,5 +148,5 @@ int main(void) {
         }          // END looping through file descriptors
     }              // END for(;;)--and you thought it would never end!
 
-    return 0;
+    return EXIT_SUCCESS;
 }

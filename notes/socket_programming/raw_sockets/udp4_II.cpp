@@ -6,19 +6,21 @@
 #include <errno.h>            // errno, perror()
 #include <linux/if_ether.h>   // ETH_P_IP = 0x0800, ETH_P_IPV6 = 0x86DD
 #include <linux/if_packet.h>  // struct sockaddr_ll (see man 7 packet)
-#include <net/ethernet.h>
-#include <net/if.h>       // struct ifreq
-#include <netdb.h>        // struct addrinfo
-#include <netinet/in.h>   // IPPROTO_UDP, INET_ADDRSTRLEN
-#include <netinet/ip.h>   // struct ip and IP_MAXPACKET (which is 65535)
-#include <netinet/udp.h>  // struct udphdr
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>      // strcpy, memset(), and memcpy()
-#include <sys/ioctl.h>   // macro ioctl is defined
-#include <sys/socket.h>  // needed for socket()
-#include <sys/types.h>   // needed for socket(), uint8_t, uint16_t, uint32_t
-#include <unistd.h>      // close()
+#include <net/if.h>           // struct ifreq
+#include <netdb.h>            // struct addrinfo
+#include <netinet/in.h>       // IPPROTO_RAW, IPPROTO_IP, IPPROTO_UDP, INET_ADDRSTRLEN
+#include <netinet/ip.h>       // struct ip and IP_MAXPACKET (which is 65535)
+#include <netinet/udp.h>      // struct udphdr
+#include <string.h>           // strcpy, memset(), and memcpy()
+#include <sys/ioctl.h>        // macro ioctl is defined
+#include <sys/socket.h>       // needed for socket()
+#include <sys/types.h>        // needed for socket(), uint8_t, uint16_t, uint32_t
+#include <unistd.h>           // close()
+
+#include <cstring>
+#include <iomanip>
+#include <iostream>
+using namespace std;
 
 // Define some constants.
 #define ETH_HDRLEN 14  // Ethernet header length
@@ -31,6 +33,21 @@ uint16_t udp4_checksum(struct ip, struct udphdr, uint8_t *, int);
 char *allocate_strmem(int);
 uint8_t *allocate_ustrmem(int);
 int *allocate_intmem(int);
+
+void printMACAddress(unsigned char *addr) {
+    ios init(NULL);
+    // copying the default `cout` formatting
+    init.copyfmt(std::cout);
+
+    for (int i = 0; i < ETH_ALEN; ++i) {
+        std::cout << std::setfill('0') << std::setw(2) << std::hex << static_cast<unsigned int>(addr[i]);
+        if (i != ETH_ALEN - 1) std::cout << ':';
+    }
+
+    // resetting the default `cout` formatting
+    std::cout.copyfmt(init);
+    std::cout << '\n';
+}
 
 int main(int argc, char **argv) {
     int i, status, datalen, frame_length, sd, bytes, *ip_flags;
@@ -69,7 +86,7 @@ int main(int argc, char **argv) {
     snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", interface);
     if (ioctl(sd, SIOCGIFHWADDR, &ifr) < 0) {
         perror("ioctl() failed to get source MAC address ");
-        return (EXIT_FAILURE);
+        exit(EXIT_FAILURE);
     }
     close(sd);
 
@@ -77,11 +94,8 @@ int main(int argc, char **argv) {
     memcpy(src_mac, ifr.ifr_hwaddr.sa_data, 6 * sizeof(uint8_t));
 
     // Report source MAC address to stdout.
-    printf("MAC address for interface %s is ", interface);
-    for (i = 0; i < 5; i++) {
-        printf("%02x:", src_mac[i]);
-    }
-    printf("%02x\n", src_mac[5]);
+    std::cout << "MAC address for interface " << interface << " is ";
+    printMACAddress(src_mac);
 
     // Find interface index from interface name and store index in
     // struct sockaddr_ll device, which will be used as an argument of sendto().
@@ -90,7 +104,7 @@ int main(int argc, char **argv) {
         perror("if_nametoindex() failed to obtain interface index ");
         exit(EXIT_FAILURE);
     }
-    printf("Index for interface %s is %i\n", interface, device.sll_ifindex);
+    std::cout << "Index for interface " << interface << " is " << device.sll_ifindex << '\n';
 
     // Set destination MAC address: you need to fill these out
     dst_mac[0] = 0xff;
@@ -114,14 +128,14 @@ int main(int argc, char **argv) {
 
     // Resolve target using getaddrinfo().
     if ((status = getaddrinfo(target, NULL, &hints, &res)) != 0) {
-        fprintf(stderr, "getaddrinfo() failed for target: %s\n", gai_strerror(status));
+        std::cerr << "getaddrinfo() failed for target: " << gai_strerror(status) << '\n';
         exit(EXIT_FAILURE);
     }
     ipv4 = (struct sockaddr_in *)res->ai_addr;
     tmp = &(ipv4->sin_addr);
     if (inet_ntop(AF_INET, tmp, dst_ip, INET_ADDRSTRLEN) == NULL) {
         status = errno;
-        fprintf(stderr, "inet_ntop() failed for target.\nError message: %s", strerror(status));
+        std::cerr << "inet_ntop() failed for target.\nError message: " << strerror(status) << '\n';
         exit(EXIT_FAILURE);
     }
     freeaddrinfo(res);
@@ -179,13 +193,13 @@ int main(int argc, char **argv) {
 
     // Source IPv4 address (32 bits)
     if ((status = inet_pton(AF_INET, src_ip, &(iphdr.ip_src))) != 1) {
-        fprintf(stderr, "inet_pton() failed for source address.\nError message: %s", strerror(status));
+        std::cerr << "inet_pton() failed for source address.\nError message: " << strerror(status) << '\n';
         exit(EXIT_FAILURE);
     }
 
     // Destination IPv4 address (32 bits)
     if ((status = inet_pton(AF_INET, dst_ip, &(iphdr.ip_dst))) != 1) {
-        fprintf(stderr, "inet_pton() failed for destination address.\nError message: %s", strerror(status));
+        std::cerr << "inet_pton() failed for destination address.\nError message: " << strerror(status) << '\n';
         exit(EXIT_FAILURE);
     }
 
@@ -258,7 +272,7 @@ int main(int argc, char **argv) {
     free(dst_ip);
     free(ip_flags);
 
-    return (EXIT_SUCCESS);
+    return EXIT_SUCCESS;
 }
 
 // Computing the internet checksum (RFC 1071).
@@ -289,7 +303,7 @@ uint16_t checksum(uint16_t *addr, int len) {
     // Checksum is one's compliment of sum.
     answer = ~sum;
 
-    return (answer);
+    return answer;
 }
 
 // Build IPv4 UDP pseudo-header and call checksum function.
@@ -369,7 +383,7 @@ char *allocate_strmem(int len) {
     void *tmp;
 
     if (len <= 0) {
-        fprintf(stderr, "ERROR: Cannot allocate memory because len = %i in allocate_strmem().\n", len);
+        std::cerr << "ERROR: Cannot allocate memory because len = " << len << " in allocate_strmem().\n";
         exit(EXIT_FAILURE);
     }
 
@@ -378,7 +392,7 @@ char *allocate_strmem(int len) {
         memset(tmp, 0, len * sizeof(char));
         return (char *)tmp;
     } else {
-        fprintf(stderr, "ERROR: Cannot allocate memory for array allocate_strmem().\n");
+        std::cerr << "ERROR: Cannot allocate memory for array allocate_strmem().\n";
         exit(EXIT_FAILURE);
     }
 }
@@ -388,7 +402,7 @@ uint8_t *allocate_ustrmem(int len) {
     void *tmp;
 
     if (len <= 0) {
-        fprintf(stderr, "ERROR: Cannot allocate memory because len = %i in allocate_ustrmem().\n", len);
+        std::cerr << "ERROR: Cannot allocate memory because len = " << len << " in allocate_ustrmem().\n";
         exit(EXIT_FAILURE);
     }
 
@@ -397,7 +411,7 @@ uint8_t *allocate_ustrmem(int len) {
         memset(tmp, 0, len * sizeof(uint8_t));
         return (uint8_t *)tmp;
     } else {
-        fprintf(stderr, "ERROR: Cannot allocate memory for array allocate_ustrmem().\n");
+        std::cerr << "ERROR: Cannot allocate memory for array allocate_ustrmem().\n";
         exit(EXIT_FAILURE);
     }
 }
@@ -407,7 +421,7 @@ int *allocate_intmem(int len) {
     void *tmp;
 
     if (len <= 0) {
-        fprintf(stderr, "ERROR: Cannot allocate memory because len = %i in allocate_intmem().\n", len);
+        std::cerr << "ERROR: Cannot allocate memory because len = " << len << " in allocate_intmem().\n";
         exit(EXIT_FAILURE);
     }
 
@@ -416,7 +430,7 @@ int *allocate_intmem(int len) {
         memset(tmp, 0, len * sizeof(int));
         return (int *)tmp;
     } else {
-        fprintf(stderr, "ERROR: Cannot allocate memory for array allocate_intmem().\n");
+        std::cerr << "ERROR: Cannot allocate memory for array allocate_intmem().\n";
         exit(EXIT_FAILURE);
     }
 }

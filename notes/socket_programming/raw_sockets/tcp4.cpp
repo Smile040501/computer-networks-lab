@@ -2,21 +2,21 @@
 // Stack fills out layer 2 (data link) information (MAC addresses) for us.
 // Values set for SYN packet, no TCP options data.
 
-#include <netdb.h>       // struct addrinfo
-#include <netinet/in.h>  // IPPROTO_RAW, IPPROTO_IP, IPPROTO_TCP, INET_ADDRSTRLEN
-#include <netinet/ip.h>  // struct ip and IP_MAXPACKET (which is 65535)
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>       // strcpy, memset(), and memcpy()
-#include <sys/socket.h>   // needed for socket()
-#include <sys/types.h>    // needed for socket(), uint8_t, uint16_t, uint32_t
-#include <unistd.h>       // close()
-#define __FAVOR_BSD       // Use BSD format of tcp header
 #include <arpa/inet.h>    // inet_pton() and inet_ntop()
 #include <errno.h>        // errno, perror()
 #include <net/if.h>       // struct ifreq
+#include <netdb.h>        // struct addrinfo
+#include <netinet/in.h>   // IPPROTO_RAW, IPPROTO_IP, IPPROTO_TCP, INET_ADDRSTRLEN
+#include <netinet/ip.h>   // struct ip and IP_MAXPACKET (which is 65535)
 #include <netinet/tcp.h>  // struct tcphdr
 #include <sys/ioctl.h>    // macro ioctl is defined
+#include <sys/socket.h>   // needed for socket()
+#include <sys/types.h>    // needed for socket(), uint8_t, uint16_t, uint32_t
+#include <unistd.h>       // close()
+
+#include <cstring>
+#include <iostream>
+using namespace std;
 
 // Define some constants.
 #define IP4_HDRLEN 20  // IPv4 header length
@@ -49,10 +49,10 @@ int main(int argc, char **argv) {
     snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", interface);
     if (ioctl(sd, SIOCGIFINDEX, &ifr) < 0) {
         perror("ioctl() failed to find interface ");
-        return (EXIT_FAILURE);
+        exit(EXIT_FAILURE);
     }
     close(sd);
-    printf("Index for interface %s is %i\n", interface, ifr.ifr_ifindex);
+    std::cout << "Index for interface " << interface << " is " << ifr.ifr_ifindex << '\n';
 
     // Source IPv4 address: you need to fill this out
     char *src_ip = allocate_strmem(INET_ADDRSTRLEN);
@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
     struct addrinfo *res;
     int status = 0;
     if ((status = getaddrinfo(target, NULL, &hints, &res)) != 0) {
-        fprintf(stderr, "getaddrinfo() failed for target: %s\n", gai_strerror(status));
+        std::cerr << "getaddrinfo() failed for target: " << gai_strerror(status) << '\n';
         exit(EXIT_FAILURE);
     }
 
@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
     char *dst_ip = allocate_strmem(INET_ADDRSTRLEN);
     if (inet_ntop(AF_INET, (void *)(&(ipv4->sin_addr)), dst_ip, INET_ADDRSTRLEN) == NULL) {
         status = errno;
-        fprintf(stderr, "inet_ntop() failed for target.\nError message: %s", strerror(status));
+        std::cerr << "inet_ntop() failed for target.\nError message: " << strerror(status) << '\n';
         exit(EXIT_FAILURE);
     }
     freeaddrinfo(res);
@@ -129,13 +129,13 @@ int main(int argc, char **argv) {
 
     // Source IPv4 address (32 bits)
     if ((status = inet_pton(AF_INET, src_ip, &(iphdr.ip_src))) != 1) {
-        fprintf(stderr, "inet_pton() failed for source address.\nError message: %s", strerror(status));
+        std::cerr << "inet_pton() failed for source address.\nError message: " << strerror(status) << '\n';
         exit(EXIT_FAILURE);
     }
 
     // Destination IPv4 address (32 bits)
     if ((status = inet_pton(AF_INET, dst_ip, &(iphdr.ip_dst))) != 1) {
-        fprintf(stderr, "inet_pton() failed for destination address.\nError message: %s", strerror(status));
+        std::cerr << "inet_pton() failed for destination address.\nError message: " << strerror(status) << '\n';
         exit(EXIT_FAILURE);
     }
 
@@ -260,7 +260,7 @@ int main(int argc, char **argv) {
     free(ip_flags);
     free(tcp_flags);
 
-    return (EXIT_SUCCESS);
+    return EXIT_SUCCESS;
 }
 
 // Computing the internet checksum (RFC 1071).
@@ -384,7 +384,7 @@ char *allocate_strmem(int len) {
     void *tmp;
 
     if (len <= 0) {
-        fprintf(stderr, "ERROR: Cannot allocate memory because len = %i in allocate_strmem().\n", len);
+        std::cerr << "ERROR: Cannot allocate memory because len = " << len << " in allocate_strmem().\n";
         exit(EXIT_FAILURE);
     }
 
@@ -393,7 +393,7 @@ char *allocate_strmem(int len) {
         memset(tmp, 0, len * sizeof(char));
         return (char *)tmp;
     } else {
-        fprintf(stderr, "ERROR: Cannot allocate memory for array allocate_strmem().\n");
+        std::cerr << "ERROR: Cannot allocate memory for array allocate_strmem().\n";
         exit(EXIT_FAILURE);
     }
 }
@@ -403,7 +403,7 @@ uint8_t *allocate_ustrmem(int len) {
     void *tmp;
 
     if (len <= 0) {
-        fprintf(stderr, "ERROR: Cannot allocate memory because len = %i in allocate_ustrmem().\n", len);
+        std::cerr << "ERROR: Cannot allocate memory because len = " << len << " in allocate_ustrmem().\n";
         exit(EXIT_FAILURE);
     }
 
@@ -412,7 +412,7 @@ uint8_t *allocate_ustrmem(int len) {
         memset(tmp, 0, len * sizeof(uint8_t));
         return (uint8_t *)tmp;
     } else {
-        fprintf(stderr, "ERROR: Cannot allocate memory for array allocate_ustrmem().\n");
+        std::cerr << "ERROR: Cannot allocate memory for array allocate_ustrmem().\n";
         exit(EXIT_FAILURE);
     }
 }
@@ -422,7 +422,7 @@ int *allocate_intmem(int len) {
     void *tmp;
 
     if (len <= 0) {
-        fprintf(stderr, "ERROR: Cannot allocate memory because len = %i in allocate_intmem().\n", len);
+        std::cerr << "ERROR: Cannot allocate memory because len = " << len << " in allocate_intmem().\n";
         exit(EXIT_FAILURE);
     }
 
@@ -431,7 +431,7 @@ int *allocate_intmem(int len) {
         memset(tmp, 0, len * sizeof(int));
         return (int *)tmp;
     } else {
-        fprintf(stderr, "ERROR: Cannot allocate memory for array allocate_intmem().\n");
+        std::cerr << "ERROR: Cannot allocate memory for array allocate_intmem().\n";
         exit(EXIT_FAILURE);
     }
 }

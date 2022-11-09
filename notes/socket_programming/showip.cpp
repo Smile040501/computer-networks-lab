@@ -1,11 +1,10 @@
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
+#include <arpa/inet.h>   // inet_pton() and inet_ntop()
+#include <netdb.h>       // struct addrinfo
+#include <netinet/in.h>  // IPPROTO_RAW, IPPROTO_IP, IPPROTO_TCP, INET_ADDRSTRLEN
+#include <sys/socket.h>  // needed for socket()
+#include <sys/types.h>   // needed for socket(), uint8_t, uint16_t, uint32_t
 
+#include <cstring>
 #include <iostream>
 using namespace std;
 
@@ -15,8 +14,8 @@ int main(int argc, char *argv[]) {
     char ipstr[INET6_ADDRSTRLEN];
 
     if (argc != 2) {
-        cerr << "usage: ./showip <hostname>\n";
-        return 1;
+        std::cerr << "usage: ./showip <hostname>\n";
+        exit(EXIT_FAILURE);
     }
 
     memset(&hints, 0, sizeof(hints));
@@ -25,11 +24,11 @@ int main(int argc, char *argv[]) {
     hints.ai_flags = AI_PASSIVE;  // use my IP
 
     if ((status = getaddrinfo(argv[1], NULL, &hints, &res)) != 0) {
-        cerr << "getaddrinfo: " << gai_strerror(status) << "\n";
-        return 2;
+        std::cerr << "getaddrinfo: " << gai_strerror(status) << "\n";
+        exit(EXIT_FAILURE);
     }
 
-    cout << "IP addresses for " << argv[1] << "\n\n";
+    std::cout << "IP addresses for " << argv[1] << "\n\n";
 
     for (p = res; p != NULL; p = p->ai_next) {
         void *addr;
@@ -38,18 +37,18 @@ int main(int argc, char *argv[]) {
         // get the pointer to the address itself,
         // different fields in IPv4 and IPv6:
         if (p->ai_family == AF_INET) {  // IPv4
-            struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
+            struct sockaddr_in *ipv4 = reinterpret_cast<struct sockaddr_in *>(p->ai_addr);
             addr = &(ipv4->sin_addr);
             ipver = "IPv4";
         } else {  // IPv6
-            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)p->ai_addr;
+            struct sockaddr_in6 *ipv6 = reinterpret_cast<struct sockaddr_in6 *>(p->ai_addr);
             addr = &(ipv6->sin6_addr);
             ipver = "IPv6";
         }
 
         // convert the IP to a string and print it:
         inet_ntop(p->ai_family, addr, ipstr, sizeof(ipstr));
-        cout << ipver << " " << ipstr << endl;
+        std::cout << ipver << " " << ipstr << endl;
     }
 
     freeaddrinfo(res);  // free the linked list
