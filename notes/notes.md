@@ -67,6 +67,10 @@
   - [FIFO (First In First Out)](#fifo-first-in-first-out)
   - [Fair Queueing or Round Robin](#fair-queueing-or-round-robin)
   - [Weighted Fair Queueing](#weighted-fair-queueing)
+- [Public-Key Algorithms](#public-key-algorithms)
+  - [RSA Algorithm to generate Public-Private Keys](#rsa-algorithm-to-generate-public-private-keys)
+    - [Encryption and Decryption](#encryption-and-decryption)
+- [Public-Key Digital Signatures](#public-key-digital-signatures)
 
 # Overview
 
@@ -1310,6 +1314,89 @@ $$
 -   With priority scheduling, give higher weight to the queue with higher priority
     -   Ideal priority scheduling gives infinite weight to the high priority queue
 
+# Public-Key Algorithms
+
+The (keyed) encryption algorithm, `E`, and the (keyed) decryption algorithm, `D`, had to meet three requirements:
+
+-   `D(E(P)) = P` and `E(D(P)) = P`
+-   It is exceedingly difficult to deduce `D` from `E`
+-   `E` cannot be broken by a chosen plaintext attack
+
+**How to communicate?**
+
+User `M` has `Eₘ` (public) and `Dₘ` (private)\
+User `N` has `Eₙ` (public) and `Dₙ` (private)
+
+For sending message to `M`, use public key of `M` which is `Eₘ` and send the encrypted message to him and `M` will decrypt the message using his private key `Dₘ`
+
+## RSA Algorithm to generate Public-Private Keys
+
+-   Choose two large primes, `p` and `q` (typically **1024 bits**)
+    -   `p` and `q` should be kept secret
+-   Compute `n = p × q`
+    -   `n` is called **modulus** for encryption and decryption
+    -   Its length, usually expressed in bits, is called the **key length**
+    -   `n` is released as part of the public key
+-   Compute `λ(n)` which is **Carmichael's Totient Function** as `λ(n) = lcm(λ(p), λ(q))`
+    -   For primes, `λ(p) = Φ(p) = p - 1`
+    -   `Φ(n)` is called **Euler totient function**
+    -   `λ(n)` is kept secret
+    -   `λ(n) = Φ(n)` is also acceptable
+-   Select an integer `e`, such that `1 < e < λ(n)` and `gcd(e, λ(n)) = 1` i.e. `e` is **co-prime** to `λ(n)`
+    -   Choosing a prime number for `e` only lefts us to check that `e` is not a divisor of `λ(n)`
+    -   `e` is called the public exponent or encryption exponent
+-   Calculate `d` such that `e d ≡ 1 mod λ(n)`
+    -   `d` is **multiplicative modulo inverse** of `e mod λ(n)`
+    -   `d` can be found using **extended euclid algorithm**
+    -   `d` is called the secret exponent or decryption exponent
+
+![](pics/29.png)
+
+-   To generate the primes `p` and `q`, generate a random number of bit length `k/2` where `k` is the required bit length of the modulus `n`
+-   Set the low bit (this ensures the number is odd) and set the two highest bits (this ensures that the high bit of `n` is also set)
+-   Check if prime (use the Rabin-Miller test
+    -   If not, increment the number by two and check again until we find a prime. This is `p`
+-   Repeat for `q` starting with a random integer of length `k − k/2`
+-   If `p < q`, swap `p` and `q`
+-   In the extremely unlikely event that p=q, check your random number generator! Alternatively, instead of incrementing by 2, just generate another random number each time
+-   To generate a random number of n-bits, we can generate a random number b/w [2ⁿ⁻¹ + 1, 2ⁿ - 1]
+
+### Encryption and Decryption
+
+-   Turn `M` (un-padded plaintext) into an integer `P` (padded plaintext), such that `0 ≤ P < n`
+-   To encrypt a message, `P`, compute **C = Pᵉ (mod n)**
+-   To decrypt `C`, compute **P = Cᵈ (mod n)**
+-   **Modular Exponentiation** can be used
+-   It can be proven that for all P in the specified range, the encryption and decryption functions are inverses
+-   The **public key** consists of the pair `(e, n)` and the **private key** consists of `(d, n)`
+-   We can either choose `e` first and compute `d` from it or vice-versa
+
+**Example**
+
+```txt
+p = 3, q = 11
+n = 33, Φ(n) = 20
+d = 7
+e = 3
 ```
 
-```
+![](pics/28.png)
+
+# Public-Key Digital Signatures
+
+What is needed is a system by which one party can send a signed message to another party in such a way that the following conditions hold:
+
+-   The receiver can verify the claimed identity of the sender
+-   The sender cannot later repudiate(reject) the contents of the message
+-   The receiver cannot possibly have concocted(invented) the message himself
+
+**How to communicate?**
+
+We know `D(E(P)) = P` and `E(D(P)) = P`
+
+User `M` has $Eₘ$ (public) and $Dₘ$ (private)\
+User `N` has $Eₙ$ (public) and $Dₙ$ (private)
+
+User `M` sends to `N` the message `P` as $\text{Eₙ(Dₘ(P))}$
+
+User `N` receive message by first applying his private key $Dₙ$ and then applying user `M`'s public key $Eₘ$
