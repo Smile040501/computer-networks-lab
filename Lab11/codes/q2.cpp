@@ -60,6 +60,10 @@ vector<ll> sign(string priFileName, string msgFileName) {
     // For each character in the message file
     // sign the message digest for each character
     std::ifstream msgFile(msgFileName, std::ios::in);
+    if (!msgFile) {
+        std::cerr << "Unable to open the file: " << msgFileName << '\n';
+        exit(EXIT_FAILURE);
+    }
     char p = '\0';
     vector<ll> ans;
     while (msgFile.get(p)) {
@@ -88,6 +92,10 @@ void encrypt(string pubFileName, string secFileName, const vector<ll> &ps) {
 
     // Open the secret file to write encrypted message
     std::ofstream secFile(secFileName, std::ios::out);
+    if (!secFile) {
+        std::cerr << "Unable to open the file: " << secFileName << '\n';
+        exit(EXIT_FAILURE);
+    }
     for (ll i = 0; i < ps.size(); ++i) {
         // Encrypted message: C = P^e mod n
         secFile << pw(ps[i], e, n);
@@ -96,10 +104,44 @@ void encrypt(string pubFileName, string secFileName, const vector<ll> &ps) {
     secFile.close();
 }
 
-// Signs and Encrypts the message given the public and private key to use
+// Signs and Encrypts the message given the public and private keys to use
 // and stores the encrypted message to the given secret file
 void signAndEncrypt(string priFileName, string msgFileName, string pubFileName, string secFileName) {
-    // First sign and then encrypt and store the message
+    // Open the private key file
+    std::ifstream priFile(priFileName, std::ios::in);
+    if (!priFile) {
+        std::cerr << "Unable to open the file: " << priFileName << '\n';
+        exit(EXIT_FAILURE);
+    }
+    // Read d and n
+    ll da = 0, na = 0;
+    priFile >> da >> na;
+    // Close the private key file
+    priFile.close();
+
+    // Open the public key file
+    std::ifstream pubFile(pubFileName, std::ios::in);
+    if (!pubFile) {
+        std::cerr << "Unable to open the file: " << pubFileName << '\n';
+        exit(EXIT_FAILURE);
+    }
+    // Read e and n
+    ll eb = 0, nb = 0;
+    pubFile >> eb >> nb;
+    // Close the public key file
+    pubFile.close();
+
+    // If n for user B is less than n for user A
+    if (nb < na) {
+        // First sign using public key of user B
+        // then encrypt using private key of user A
+        encrypt(priFileName, secFileName, sign(pubFileName, msgFileName));
+        return;
+    }
+
+    // First sign using private key of user A
+    // then encrypt using public key of user B
+    // and store the message in secret.txt
     encrypt(pubFileName, secFileName, sign(priFileName, msgFileName));
 }
 

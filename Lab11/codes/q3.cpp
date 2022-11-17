@@ -66,6 +66,10 @@ vector<ll> decrypt(string priFileName, string secFileName) {
     // Decrypt each encrypted message in the secret file
     vector<ll> ans;
     std::ifstream secFile(secFileName, std::ios::in);
+    if (!secFile) {
+        std::cerr << "Unable to open the file: " << secFileName << '\n';
+        exit(EXIT_FAILURE);
+    }
     while (!secFile.eof()) {
         ll c = 0;
         secFile >> c;
@@ -131,11 +135,45 @@ bool validateMsgDigest(string msgFileName, const vector<ll> &mds) {
 // Decrypts and unsigns the received secret message using the given public and private keys
 // and validates it with the received message file
 void decryptAndUnsign(string priFileName, string msgFileName, string pubFileName, string secFileName) {
+    // Open the private key file
+    std::ifstream priFile(priFileName, std::ios::in);
+    if (!priFile) {
+        std::cerr << "Unable to open the file: " << priFileName << '\n';
+        exit(EXIT_FAILURE);
+    }
+    // Read d and n
+    ll db = 0, nb = 0;
+    priFile >> db >> nb;
+    // Close the private key file
+    priFile.close();
+
+    // Open the public key file
+    std::ifstream pubFile(pubFileName, std::ios::in);
+    if (!pubFile) {
+        std::cerr << "Unable to open the file: " << pubFileName << '\n';
+        exit(EXIT_FAILURE);
+    }
+    // Read e and n
+    ll ea = 0, na = 0;
+    pubFile >> ea >> na;
+    // Close the public key file
+    pubFile.close();
+
     // Get the unsigned message digests
-    vector<ll> mds = unsign(USER_A_PUB, decrypt(USER_B_PRI, SEC_FILE));
+    vector<ll> mds;
+    // If n for user B is less than n for user A
+    if (nb < na) {
+        // First decrypt using the public key of user A
+        // then unsign using the private key of user B
+        mds = unsign(priFileName, decrypt(pubFileName, secFileName));
+    } else {
+        // First decrypt using the private key of user B
+        // then unsign using the public key of user A
+        mds = unsign(pubFileName, decrypt(priFileName, secFileName));
+    }
 
     // Validate the received message digests with the received message file
-    if (!validateMsgDigest(MSG_FILE, mds)) {
+    if (!validateMsgDigest(msgFileName, mds)) {
         std::cout << "Message not verified\n";
         return;
     }
